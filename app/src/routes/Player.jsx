@@ -48,12 +48,42 @@ const TEE_TIMES = [
   { time: '3:10 PM', status: 'OPEN', tone: 'muted' },
 ]
 
-const COURSE_STATS = [
+const DEFAULT_COURSE_STATS = [
   { label: 'Greens speed', value: '11.2 ft' },
   { label: 'Fairways', value: 'Firm' },
   { label: 'Bunkers', value: 'Groomed' },
   { label: 'Cart rule', value: '90° Rule' },
 ]
+
+function formatGreensSpeed(val) {
+  const n = Number(val)
+  if (!Number.isFinite(n)) return '—'
+  const rounded = Math.round(n * 10) / 10
+  return `${rounded} ft`
+}
+
+function getStatusBadgeStyle(status) {
+  const s = (status || 'Open').toLowerCase()
+  if (s === 'closed') {
+    return {
+      background: 'rgba(127,29,29,0.80)',
+      border: '0.5px solid rgba(248,113,113,0.30)',
+      color: '#f87171',
+    }
+  }
+  if (s.includes('frost')) {
+    return {
+      background: 'rgba(59,130,246,0.25)',
+      border: '0.5px solid rgba(96,165,250,0.30)',
+      color: '#93c5fd',
+    }
+  }
+  return {
+    background: 'rgba(16,68,36,0.80)',
+    border: '0.5px solid rgba(74,222,128,0.30)',
+    color: '#4ade80',
+  }
+}
 
 const TABLER_ICONS_URL =
   'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css'
@@ -358,6 +388,7 @@ function TablerIcon({ name }) {
 
 export default function Player() {
   const [weather, setWeather] = useState(null)
+  const [courseStatus, setCourseStatus] = useState(null)
   const [error, setError] = useState(null)
   const [started, setStarted] = useState(false)
   const [clock, setClock] = useState(() => new Date())
@@ -451,6 +482,38 @@ export default function Player() {
       cancelled = true
       subscription?.unsubscribe()
       clearInterval(interval)
+    }
+  }, [])
+
+  useEffect(() => {
+    let subscription
+
+    async function loadCourseStatus() {
+      const { data } = await supabase
+        .from('course_status')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (data) setCourseStatus(data)
+    }
+
+    loadCourseStatus()
+
+    subscription = supabase
+      .channel('player-course-status')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'course_status' },
+        (payload) => {
+          if (payload.new) setCourseStatus(payload.new)
+        },
+      )
+      .subscribe()
+
+    return () => {
+      subscription?.unsubscribe()
     }
   }, [])
 
@@ -553,6 +616,33 @@ export default function Player() {
     windSpeed != null
       ? `${getWindCardinal(windDir ?? 0)} ${Math.round(windSpeed)} mph`
       : '—'
+
+  const courseStatsCards = useMemo(() => {
+    if (!courseStatus) return DEFAULT_COURSE_STATS
+    return [
+      {
+        label: 'Greens speed',
+        value: formatGreensSpeed(courseStatus.greens_speed),
+      },
+      {
+        label: 'Fairways',
+        value: courseStatus.fairway_condition || '—',
+      },
+      {
+        label: 'Bunkers',
+        value: courseStatus.bunker_condition || '—',
+      },
+      {
+        label: 'Cart rule',
+        value: courseStatus.cart_rule || '—',
+      },
+    ]
+  }, [courseStatus])
+
+  const statusBadgeLabel = (
+    courseStatus?.course_status || 'Open'
+  ).toUpperCase()
+  const statusBadgeStyle = getStatusBadgeStyle(courseStatus?.course_status)
 
   return (
     <div className="player-root">
@@ -1330,13 +1420,20 @@ export default function Player() {
           <section className="panel-section">
             <div className="section-header">
               <span className="section-label">Course Status</span>
-              <span className="status-badge">
+              <span
+                className="status-badge"
+                style={{
+                  background: statusBadgeStyle.background,
+                  border: statusBadgeStyle.border,
+                  color: statusBadgeStyle.color,
+                }}
+              >
                 <span className="live-dot" />
-                OPEN
+                {statusBadgeLabel}
               </span>
             </div>
             <div className="course-grid">
-              {COURSE_STATS.map((card) => (
+              {courseStatsCards.map((card) => (
                 <div key={card.label} className="course-card">
                   <p className="course-card-label">{card.label}</p>
                   <p className="course-card-value">{card.value}</p>
