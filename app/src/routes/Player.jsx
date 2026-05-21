@@ -7,6 +7,7 @@ import {
   getEasternHour,
   getWindCardinal,
 } from '../lib/weatherVisuals'
+import WeatherCanvas from '../components/canvas/WeatherCanvas'
 
 const DEFAULT_WEATHER = {
   temperature_f: 72,
@@ -31,6 +32,36 @@ const DEFAULT_WEATHER = {
 
 const visualStore = createVisualStateStore()
 
+const LOGO_URL =
+  'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
+
+const ANNOUNCEMENTS = [
+  'Tee times every 9 minutes · Book at oldesycamoregolf.com · 704-573-1000',
+  'Restaurant & bar open daily · Burgers, pizza, sandwiches & local craft beers',
+  "Men's Invitational · May 24–26 · Live scoring available in the app",
+  'Membership available · No initiation fee · Call 704-573-1000 for details',
+  'Greens top-dressed Tue & Wed · Front 9 only · Back 9 open all day',
+  'Practice facility open 7 AM–7 PM · Driving range, chipping green & putting green',
+]
+
+const TEE_TIMES = [
+  { time: '9:40 AM', status: '2 SPOTS', tone: 'green' },
+  { time: '10:20 AM', status: '4 SPOTS', tone: 'green' },
+  { time: '11:00 AM', status: 'WAITLIST', tone: 'yellow' },
+  { time: '1:40 PM', status: '2 SPOTS', tone: 'green' },
+  { time: '3:10 PM', status: 'OPEN', tone: 'muted' },
+]
+
+const COURSE_STATS = [
+  { label: 'Greens speed', value: '11.2 ft' },
+  { label: 'Fairways', value: 'Firm' },
+  { label: 'Bunkers', value: 'Groomed' },
+  { label: 'Cart rule', value: '90° Rule' },
+]
+
+const TABLER_ICONS_URL =
+  'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css'
+
 function parseHourlyForecast(hf) {
   if (!hf) return DEFAULT_WEATHER.hourly_forecast
   if (typeof hf === 'string') {
@@ -43,42 +74,65 @@ function parseHourlyForecast(hf) {
   return hf
 }
 
-const BACKGROUND_IMAGE_URL =
-  'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/img-olde-sycamore-1.webp'
+function parseSlotHour(isoOrTime) {
+  const s = String(isoOrTime)
+  if (s.includes('T')) {
+    return getEasternHour(new Date(s))
+  }
+  const match = s.match(/^(\d{1,2}):/)
+  return match ? parseInt(match[1], 10) : 0
+}
 
-const LOGO_URL =
-  'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
-
-const MESSAGES = [
-  'Tee times every 9 minutes · Book at oldesycamoregolf.com or call 704-573-1000',
-  'Restaurant & bar open daily · Burgers, pizza, sandwiches & local craft beers',
-  'Practice facilities: driving range, putting green, chipping green & bunker',
-  'Membership available · No initiation fee · Call 704-573-1000 for details',
-  'Dress code: proper golf attire required · No denim or athletic shorts',
-  'Greens top-dressed Tuesdays & Wednesdays through summer · 9 holes each day',
-]
-
-function formatHourLabel(isoOrTime) {
+function formatHourCompact(isoOrTime) {
   if (!isoOrTime) return '—'
   const s = String(isoOrTime)
+  let h = 0
   if (s.includes('T')) {
     const d = new Date(s)
     if (!isNaN(d.getTime())) {
-      return d.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        hour12: true,
-        timeZone: 'America/New_York',
-      })
+      h = parseInt(
+        d.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          hour12: false,
+          timeZone: 'America/New_York',
+        }),
+        10,
+      )
+    }
+  } else {
+    const match = s.match(/^(\d{1,2}):/)
+    if (match) h = parseInt(match[1], 10)
+    else return s
+  }
+  const hour12 = h % 12 === 0 ? 12 : h % 12
+  const suffix = h >= 12 ? 'P' : 'A'
+  return `${hour12}${suffix}`
+}
+
+function getForecastSlots(hourly, referenceDate) {
+  const times = hourly?.time || []
+  if (times.length === 0) return []
+
+  const currentHour = getEasternHour(referenceDate)
+  let start = 0
+  for (let i = 0; i < times.length; i++) {
+    if (parseSlotHour(times[i]) >= currentHour) {
+      start = i
+      break
     }
   }
-  const match = s.match(/^(\d{1,2}):(\d{2})/)
-  if (match) {
-    const h = parseInt(match[1], 10)
-    const hour12 = h % 12 === 0 ? 12 : h % 12
-    const period = h >= 12 ? 'PM' : 'AM'
-    return `${hour12} ${period}`
+
+  const slots = []
+  for (let j = 0; j < 6; j++) {
+    const i = start + j
+    if (i >= times.length) break
+    slots.push({
+      time: times[i],
+      temp: hourly.temperature?.[i],
+      precip: hourly.precip_probability?.[i],
+    })
   }
-  return s
+  return slots
 }
 
 function getUvLabel(uv) {
@@ -91,18 +145,157 @@ function getUvLabel(uv) {
 }
 
 function getUvLabelColor(uv) {
-  if (uv == null) return 'rgba(255, 255, 255, 0.6)'
-  if (uv <= 2) return 'rgba(255, 255, 255, 0.6)'
+  if (uv == null) return 'rgba(255, 255, 255, 0.65)'
+  if (uv <= 2) return 'rgba(255, 255, 255, 0.65)'
   if (uv <= 5) return '#fbbf24'
   if (uv <= 7) return '#f97316'
   if (uv <= 10) return '#ef4444'
   return '#a855f7'
 }
 
-function getTimeGreeting(hour) {
-  if (hour >= 5 && hour < 12) return 'Good morning for golf'
-  if (hour >= 12 && hour < 17) return 'Good afternoon for golf'
-  return 'Evening round'
+function isRainStormCode(code) {
+  if (code == null) return false
+  if (code >= 95) return true
+  return [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)
+}
+
+function getGolferTips(weatherCode, windSpeed, uvIndex, precipProb, isDay, hour) {
+  const code = weatherCode ?? 0
+  const wind = windSpeed ?? 0
+  const uv = uvIndex ?? 0
+  const precip = precipProb ?? 0
+  const day = isDay === 1 || isDay === true
+  const h = hour ?? 12
+
+  const defaultTips = [
+    {
+      icon: 'flag',
+      text: 'Course in excellent condition. Greens running 11.2 ft today.',
+    },
+    {
+      icon: 'droplet',
+      text: 'Cart paths only until 10 AM after overnight moisture.',
+    },
+    {
+      icon: 'users',
+      text: 'Peak hours 8–11 AM. Book ahead to guarantee your preferred time.',
+    },
+  ]
+
+  if (code >= 95) {
+    return [
+      {
+        icon: 'alert-triangle',
+        text: 'Course closed — thunderstorm. Return to clubhouse immediately.',
+      },
+      {
+        icon: 'clock',
+        text: 'Check with pro shop for updated tee times once storm clears.',
+      },
+      {
+        icon: 'building',
+        text: '19th Hole Grill open. Happy hour pricing active during weather delay.',
+      },
+    ]
+  }
+
+  if (precip > 60 || isRainStormCode(code)) {
+    return [
+      {
+        icon: 'umbrella',
+        text: 'Rain advisory in effect. Course open — bring waterproof gear.',
+      },
+      {
+        icon: 'alert-triangle',
+        text: 'Lightning protocol: course horn sounds if lightning within 8 miles. Seek shelter.',
+      },
+      {
+        icon: 'droplet',
+        text: 'Soft conditions expected. Low irons check up quickly on greens.',
+      },
+    ]
+  }
+
+  if (!day) {
+    return [
+      {
+        icon: 'moon',
+        text: 'Course closed. Opens at sunrise, 6:08 AM tomorrow.',
+      },
+      {
+        icon: 'phone',
+        text: "Book tomorrow's tee time at oldesycamoregolf.com.",
+      },
+      {
+        icon: 'star',
+        text: 'Practice facility lights available until 10 PM.',
+      },
+    ]
+  }
+
+  if (uv >= 8) {
+    return [
+      {
+        icon: 'sun',
+        text: `UV index ${uv} (Very High). Apply SPF 50+ before your round.`,
+      },
+      defaultTips[1],
+      defaultTips[2],
+    ]
+  }
+
+  if (uv >= 6) {
+    return [
+      {
+        icon: 'sun',
+        text: `UV index ${uv} (High). Sunscreen recommended.`,
+      },
+      defaultTips[0],
+      defaultTips[2],
+    ]
+  }
+
+  if (wind >= 15) {
+    return [
+      {
+        icon: 'wind',
+        text: `Strong ${Math.round(wind)} mph wind. Club up 1-2 on approach shots.`,
+      },
+      defaultTips[0],
+      defaultTips[2],
+    ]
+  }
+
+  if (wind >= 8) {
+    return [
+      {
+        icon: 'wind',
+        text: `${Math.round(wind)} mph wind. Factor into club selection on par 3s.`,
+      },
+      defaultTips[0],
+      defaultTips[1],
+    ]
+  }
+
+  if (h >= 17 && day) {
+    return [
+      {
+        icon: 'clock',
+        text: 'Twilight rates start at 5 PM — $45 walking, $60 cart.',
+      },
+      {
+        icon: 'sun',
+        text: 'Approx. 2 hrs of daylight remaining for a full round.',
+      },
+      defaultTips[2],
+    ]
+  }
+
+  return defaultTips
+}
+
+function TablerIcon({ name }) {
+  return <i className={`ti ti-${name}`} aria-hidden="true" />
 }
 
 export default function Player() {
@@ -115,24 +308,34 @@ export default function Player() {
   const hasResetVisuals = useRef(false)
 
   useEffect(() => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = TABLER_ICONS_URL
+    document.head.appendChild(link)
+    return () => {
+      if (link.parentNode) link.parentNode.removeChild(link)
+    }
+  }, [])
+
+  useEffect(() => {
     let subscribed = true
 
     async function init() {
       try {
-        // Connect to ScreenCloud player lifecycle
         await connectScreenCloud()
         const sc = getScreenCloud()
         await sc.onAppStarted()
         if (subscribed) setStarted(true)
       } catch (e) {
         console.log('Not running inside ScreenCloud player (or dev mode)', e)
-        // In local dev, just proceed without ScreenCloud
         if (subscribed) setStarted(true)
       }
     }
 
     init()
-    return () => { subscribed = false }
+    return () => {
+      subscribed = false
+    }
   }, [])
 
   useEffect(() => {
@@ -141,15 +344,15 @@ export default function Player() {
     let subscription
 
     async function loadWeather() {
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('weather_cache')
         .select('*')
         .order('fetched_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
-      if (error) {
-        setError(error.message)
+      if (fetchError) {
+        setError(fetchError.message)
       } else {
         setWeather(data)
       }
@@ -157,7 +360,6 @@ export default function Player() {
 
     loadWeather()
 
-    // Realtime subscription to weather_cache changes
     subscription = supabase
       .channel('weather-cache-changes')
       .on(
@@ -165,11 +367,10 @@ export default function Player() {
         { event: '*', schema: 'public', table: 'weather_cache' },
         (payload) => {
           setWeather(payload.new)
-        }
+        },
       )
       .subscribe()
 
-    // Also poll every 60 seconds as fallback
     const interval = setInterval(loadWeather, 60000)
 
     return () => {
@@ -185,8 +386,8 @@ export default function Player() {
 
   useEffect(() => {
     const rotate = setInterval(
-      () => setMessageIndex((i) => (i + 1) % MESSAGES.length),
-      8000,
+      () => setMessageIndex((i) => (i + 1) % ANNOUNCEMENTS.length),
+      6500,
     )
     return () => clearInterval(rotate)
   }, [])
@@ -213,11 +414,15 @@ export default function Player() {
   }, [started, weather])
 
   const w = weather || DEFAULT_WEATHER
-  const hourly = useMemo(() => parseHourlyForecast(w.hourly_forecast), [w.hourly_forecast])
+  const hourly = useMemo(
+    () => parseHourlyForecast(w.hourly_forecast),
+    [w.hourly_forecast],
+  )
 
   const precipProb = w.precip_probability ?? 0
   const windSpeed = w.wind_speed_mph ?? 0
   const windDir = w.wind_direction ?? 0
+  const easternHour = getEasternHour(clock)
 
   const visual = visualStore.current ?? getVisualState(w)
 
@@ -227,661 +432,765 @@ export default function Player() {
     timeZone: 'America/New_York',
   })
 
-  const tempDisplay =
-    w.temperature_f != null ? Math.round(w.temperature_f) : '--'
-  const feelsDisplay =
-    w.feels_like_f != null ? Math.round(w.feels_like_f) : '--'
-
-  const easternHour = getEasternHour(clock)
-  const gustMph = Math.round(
-    windSpeed * (0.9 + (visual.windGustFactor ?? 0) * 0.35),
-  )
   const dateStr = clock.toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
     timeZone: 'America/New_York',
   })
-  const showUvAdvisory = (w.uv_index ?? 0) > 7
 
-  const sceneStyle = {
-    '--sky-tint-color': visual.skyTintColor,
-    '--sky-tint-opacity': visual.skyTintOpacity,
-    '--ambient-tint': visual.ambientTintColor,
-    '--vignette-opacity': visual.vignetteOpacity,
-    '--scene-filter': `brightness(${visual.sceneExposure}) contrast(${visual.sceneContrast}) saturate(${visual.sceneSaturation})`,
-  }
+  const tempDisplay =
+    w.temperature_f != null ? Math.round(w.temperature_f) : '--'
+  const feelsDisplay =
+    w.feels_like_f != null ? Math.round(w.feels_like_f) : '--'
+
+  const forecastSlots = useMemo(
+    () => getForecastSlots(hourly, clock),
+    [hourly, clock],
+  )
+
+  const golferTips = useMemo(
+    () =>
+      getGolferTips(
+        w.weather_code,
+        windSpeed,
+        w.uv_index,
+        precipProb,
+        w.is_day,
+        easternHour,
+      ),
+    [w.weather_code, w.uv_index, w.is_day, windSpeed, precipProb, easternHour],
+  )
+
+  const windLabel = `${getWindCardinal(windDir)} ${windSpeed != null ? `${Math.round(windSpeed)} mph` : '—'}`
 
   return (
-    <div className="player-scene" style={sceneStyle}>
+    <div className="player-root">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
 
-        .player-scene {
-          --sp-1: 8px;
-          --sp-2: 16px;
-          --sp-3: 24px;
-          --sp-4: 32px;
-          --sp-6: 48px;
-          --text-display: 200 clamp(64px, 10vw, 88px) / 1 'Inter', sans-serif;
-          --text-clock: 600 clamp(32px, 5vw, 52px) / 1 'Inter', sans-serif;
-          --text-heading: 600 clamp(15px, 2vw, 20px) / 1.2 'Inter', sans-serif;
-          --text-body: 400 clamp(13px, 1.6vw, 16px) / 1.4 'Inter', sans-serif;
-          --text-caption: 400 clamp(11px, 1.1vw, 12px) / 1.35 'Inter', sans-serif;
-          --text-primary: #ffffff;
-          --text-secondary: rgba(255, 255, 255, 0.82);
-          --text-tertiary: rgba(255, 255, 255, 0.62);
-          --brand-green: #1a3d2e;
-          --card-bg: rgba(0, 0, 0, 0.38);
-          --card-border: rgba(255, 255, 255, 0.14);
-          --uv-advisory: #f97316;
-          --rain-highlight: rgba(147, 197, 253, 0.9);
-          position: relative;
+        .player-root {
+          position: fixed;
+          inset: 0;
           width: 100vw;
           height: 100vh;
           overflow: hidden;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          color: var(--text-primary);
+          color: #ffffff;
         }
 
-        .player-scene .readable {
-          text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
-        }
-
-        .type-display {
-          font: var(--text-display);
-          color: var(--text-primary);
-        }
-
-        .type-clock {
-          font: var(--text-clock);
-          color: var(--text-primary);
-        }
-
-        .type-heading {
-          font: var(--text-heading);
-        }
-
-        .type-body {
-          font: var(--text-body);
-        }
-
-        .type-caption {
-          font: var(--text-caption);
-        }
-
-        .type-primary { color: var(--text-primary); }
-        .type-secondary { color: var(--text-secondary); }
-        .type-tertiary { color: var(--text-tertiary); }
-
-        .scene-background {
+        .player-canvas {
           position: absolute;
           inset: 0;
-          z-index: 1;
-          width: 100%;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .player-ui {
+          position: absolute;
+          inset: 0;
+          z-index: 10;
+          display: flex;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .panel-left {
+          position: relative;
+          width: 68%;
           height: 100%;
-          object-fit: cover;
-          object-position: center 60%;
-          filter: var(--scene-filter);
-          transition: filter 2.5s ease;
-        }
-
-        .weather-tint,
-        .ambient-tint,
-        .scene-vignette {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          transition: background-color 2.5s ease, opacity 2.5s ease;
-        }
-
-        .weather-tint {
-          z-index: 2;
-          background-color: var(--sky-tint-color);
-          opacity: var(--sky-tint-opacity);
-        }
-
-        .ambient-tint {
-          z-index: 3;
-          background-color: var(--ambient-tint);
-        }
-
-        .scene-vignette {
-          z-index: 4;
-          background: radial-gradient(
-            ellipse at center,
-            transparent 42%,
-            rgba(0, 0, 0, var(--vignette-opacity)) 100%
-          );
-        }
-
-        .scene-rain {
-          position: absolute;
-          inset: 0;
-          z-index: 6;
-          pointer-events: none;
+          flex-shrink: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
           overflow: hidden;
         }
 
-        .rain-drop {
-          position: absolute;
-          width: 1px;
+        .panel-left-top {
+          padding: clamp(12px, 1.8vh, 20px) clamp(14px, 2vw, 22px);
           background: linear-gradient(
             180deg,
-            transparent 0%,
-            rgba(255, 255, 255, 0.12) 40%,
-            rgba(255, 255, 255, 0.35) 100%
+            rgba(0, 0, 0, 0.55) 0%,
+            transparent 100%
           );
-          animation: rain-fall linear infinite;
-        }
-
-        @keyframes rain-fall {
-          0% {
-            transform: translateY(-30px) rotate(var(--rain-angle, 12deg));
-            opacity: 0;
-          }
-          8% { opacity: 1; }
-          100% {
-            transform: translateY(105vh) rotate(var(--rain-angle, 12deg));
-            opacity: 0;
-          }
-        }
-
-        /* ZONE 1 — TOP BAR */
-        .zone-top {
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 80px;
-          z-index: 20;
-          display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          align-items: center;
-          padding: 0 var(--sp-4);
-          background: linear-gradient(180deg, rgba(0, 0, 0, 0.52) 0%, transparent 100%);
-          pointer-events: none;
-        }
-
-        .top-brand {
-          display: flex;
-          flex-direction: column;
-          gap: var(--sp-1);
-        }
-
-        .top-logo {
-          height: 40px;
-          width: auto;
-          filter: brightness(10);
-        }
-
-        .top-tagline {
-          font: var(--text-caption);
-          color: var(--text-tertiary);
-          margin: 0;
-        }
-
-        .top-clock {
-          text-align: right;
-        }
-
-        .top-clock-time {
-          font: var(--text-clock);
-          color: var(--text-primary);
-          margin: 0;
-          font-variant-numeric: tabular-nums;
-        }
-
-        .top-clock-date {
-          font: var(--text-caption);
-          color: var(--text-tertiary);
-          margin: var(--sp-1) 0 0;
-        }
-
-        /* ZONE 2 — MAIN */
-        .zone-main {
-          position: absolute;
-          top: 80px;
-          left: 0;
-          right: 0;
-          bottom: 220px;
-          z-index: 20;
-          display: grid;
-          grid-template-columns: 1fr 2fr 1fr;
-          align-items: center;
-          pointer-events: none;
-        }
-
-        .col-left {
-          display: flex;
-          flex-direction: column;
-          gap: var(--sp-2);
-          padding-left: var(--sp-4);
-          align-self: center;
-        }
-
-        .col-center {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          gap: var(--sp-2);
-        }
-
-        .temp-hero {
-          margin: 0;
-          line-height: 1;
-        }
-
-        .temp-degree {
-          font-size: 0.42em;
-          font-weight: 200;
-          vertical-align: super;
-        }
-
-        .wind-hand {
-          display: block;
-          margin: var(--sp-1) 0;
-        }
-
-        .condition-label {
-          font: var(--text-heading);
-          color: var(--text-secondary);
-          margin: 0;
-          text-transform: capitalize;
-        }
-
-        .feels-label {
-          font: var(--text-body);
-          color: var(--text-tertiary);
-          margin: 0;
-        }
-
-        .uv-advisory-line {
-          font: var(--text-caption);
-          color: var(--uv-advisory);
-          margin: 0;
-        }
-
-        .col-right {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding-right: var(--sp-4);
-          align-self: center;
-        }
-
-        .compass-bezel {
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border-radius: 50%;
-        }
-
-        .compass-needle {
-          transition: transform 1.5s ease;
-        }
-
-        .compass-meta {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: var(--sp-1);
-          margin-top: var(--sp-2);
-          min-height: 44px;
-        }
-
-        .compass-speed {
-          font: var(--text-heading);
-          color: var(--text-primary);
-          margin: 0;
-        }
-
-        .compass-cardinal,
-        .compass-gusts {
-          font: var(--text-caption);
-          color: var(--text-tertiary);
-          margin: 0;
-        }
-
-        /* ZONE 3 — BOTTOM PANEL */
-        .zone-bottom {
-          position: absolute;
-          bottom: 36px;
-          left: 0;
-          right: 0;
-          z-index: 20;
-          padding: 0 var(--sp-4);
-          display: flex;
-          flex-direction: column;
-          gap: var(--sp-2);
-          pointer-events: none;
-        }
-
-        .card-row {
-          display: flex;
-          gap: var(--sp-2);
-          align-items: stretch;
-        }
-
-        .data-card {
-          flex: 1;
-          background: var(--card-bg);
-          border: 0.5px solid var(--card-border);
-          border-radius: 10px;
-          padding: var(--sp-2) var(--sp-3);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          min-height: 44px;
-        }
-
-        .card-label {
-          font: var(--text-caption);
-          color: var(--text-tertiary);
-          text-transform: uppercase;
-          letter-spacing: 0.8px;
-          margin: 0;
-        }
-
-        .card-value {
-          font: var(--text-heading);
-          color: var(--text-primary);
-          margin: 4px 0 0;
-        }
-
-        .card-sub {
-          font: var(--text-caption);
-          margin: 4px 0 0;
-        }
-
-        .forecast-card {
-          text-align: center;
-        }
-
-        .forecast-rain-high {
-          color: var(--rain-highlight);
-        }
-
-        /* ZONE 4 — MESSAGE BAR */
-        .zone-message {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 36px;
-          z-index: 25;
-          background: var(--brand-green);
-          border-top: 0.5px solid rgba(255, 255, 255, 0.1);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: var(--sp-3);
-          padding: 0 var(--sp-4);
-          pointer-events: none;
-        }
-
-        .msg-logo {
-          height: 18px;
-          width: auto;
-          filter: brightness(10);
-          opacity: 0.5;
           flex-shrink: 0;
         }
 
-        .msg-logo-mirror {
-          transform: scaleX(-1);
+        .panel-logo {
+          display: block;
+          height: clamp(30px, 4.5vw, 52px);
+          width: auto;
+          object-fit: contain;
+          object-position: left center;
+          filter: brightness(10);
+          opacity: 0.9;
         }
 
-        .msg-body {
+        .panel-logo-tagline {
+          margin: clamp(4px, 0.5vh, 6px) 0 0;
+          font-size: clamp(9px, 1vw, 12px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.52);
+          letter-spacing: 0.3px;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .panel-left-hero {
           flex: 1;
-          position: relative;
-          height: 100%;
           display: flex;
-          align-items: center;
+          flex-direction: column;
           justify-content: center;
-          min-width: 0;
+          padding: 0 8% 0 clamp(14px, 2vw, 22px);
+          min-height: 0;
+          overflow: hidden;
         }
 
-        .msg-text {
-          position: absolute;
-          font: var(--text-caption);
-          color: var(--text-secondary);
-          text-align: center;
+        .hero-eyebrow {
+          margin: 0 0 clamp(4px, 0.6vh, 6px);
+          font-size: clamp(9px, 1vw, 12px);
+          font-weight: 300;
+          color: rgba(255, 255, 255, 0.58);
+          letter-spacing: clamp(2px, 0.4vw, 4px);
+          text-transform: uppercase;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .hero-title {
           margin: 0;
-          padding: 0 var(--sp-2);
-          opacity: 0;
-          transition: opacity 1.2s ease;
-          max-width: 100%;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-size: clamp(20px, 4vw, 46px);
+          font-weight: 700;
+          color: #ffffff;
+          line-height: 1.05;
+          text-shadow: 0 3px 20px rgba(0, 0, 0, 0.7);
         }
 
-        .msg-text.active {
+        .hero-tagline {
+          margin: clamp(4px, 0.6vh, 5px) 0 0;
+          font-family: Georgia, 'Times New Roman', serif;
+          font-style: italic;
+          font-size: clamp(10px, 1.5vw, 17px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.68);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .panel-left-bottom {
+          padding: clamp(10px, 1.5vh, 16px) clamp(14px, 2vw, 22px);
+          background: linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.62) 0%,
+            transparent 100%
+          );
+          flex-shrink: 0;
+        }
+
+        .announce-label {
+          margin: 0 0 clamp(4px, 0.6vh, 5px);
+          font-size: clamp(8px, 0.9vw, 9px);
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.5);
+          letter-spacing: clamp(1px, 0.2vw, 2px);
+          text-transform: uppercase;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .announce-body {
+          position: relative;
+          min-height: 2.4em;
+        }
+
+        .announce-text {
+          position: absolute;
+          inset: 0;
+          margin: 0;
+          font-size: clamp(11px, 1.4vw, 16px);
+          font-weight: 300;
+          color: rgba(255, 255, 255, 0.94);
+          line-height: 1.4;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          opacity: 0;
+          transition: opacity 0.65s ease;
+        }
+
+        .announce-text.active {
           opacity: 1;
         }
 
-        .player-error-badge {
+        .announce-dots {
+          display: flex;
+          gap: clamp(4px, 0.5vw, 6px);
+          margin-top: clamp(6px, 0.8vh, 8px);
+        }
+
+        .announce-dot {
+          width: clamp(3px, 0.4vw, 4px);
+          height: clamp(3px, 0.4vw, 4px);
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.2);
+          transition: background 0.3s ease;
+        }
+
+        .announce-dot.active {
+          background: rgba(255, 255, 255, 0.78);
+        }
+
+        .panel-divider {
+          width: 1px;
+          flex-shrink: 0;
+          background: linear-gradient(
+            180deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.1) 15%,
+            rgba(255, 255, 255, 0.1) 85%,
+            transparent 100%
+          );
+        }
+
+        .panel-right {
+          width: 32%;
+          height: 100%;
+          flex-shrink: 0;
+          background: rgba(6, 12, 8, 0.72);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .panel-section {
+          flex-shrink: 0;
+          padding: clamp(8px, 1.2vh, 13px) clamp(10px, 1.4vw, 16px);
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+          overflow: hidden;
+        }
+
+        .panel-section-tips {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .section-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: clamp(6px, 0.8vw, 8px);
+          margin-bottom: clamp(6px, 0.8vh, 8px);
+        }
+
+        .section-label {
+          display: flex;
+          align-items: center;
+          gap: clamp(4px, 0.5vw, 6px);
+          font-size: clamp(8px, 0.9vw, 9px);
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.5);
+          letter-spacing: clamp(1px, 0.2vw, 2px);
+          text-transform: uppercase;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .live-dot {
+          width: clamp(4px, 0.5vw, 5px);
+          height: clamp(4px, 0.5vw, 5px);
+          border-radius: 50%;
+          background: #4ade80;
+          animation: live-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes live-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+
+        .section-meta {
+          font-size: clamp(8px, 0.9vw, 9px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .weather-hero-row {
+          margin-bottom: clamp(6px, 0.8vh, 8px);
+        }
+
+        .weather-temp {
+          margin: 0;
+          font-size: clamp(32px, 4.5vw, 52px);
+          font-weight: 200;
+          line-height: 1;
+          color: #ffffff;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .weather-condition {
+          margin: clamp(2px, 0.3vh, 4px) 0 0;
+          font-size: clamp(11px, 1.3vw, 15px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.88);
+          text-transform: capitalize;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .weather-feels {
+          margin: clamp(2px, 0.3vh, 3px) 0 0;
+          font-size: clamp(10px, 1.1vw, 13px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.52);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .detail-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: clamp(4px, 0.5vh, 5px) 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .detail-row:last-of-type {
+          border-bottom: none;
+        }
+
+        .detail-label {
+          font-size: clamp(10px, 1.1vw, 12px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .detail-value {
+          font-size: clamp(11px, 1.2vw, 13px);
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.9);
+          text-align: right;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .forecast-block {
+          border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+          padding-top: clamp(6px, 0.8vh, 7px);
+          margin-top: clamp(6px, 0.8vh, 7px);
+        }
+
+        .forecast-strip {
+          display: flex;
+          align-items: stretch;
+        }
+
+        .forecast-slot {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+          gap: clamp(2px, 0.3vh, 3px);
+          padding: 0 clamp(2px, 0.3vw, 4px);
+          border-right: 0.5px solid rgba(255, 255, 255, 0.07);
+          min-width: 0;
+        }
+
+        .forecast-slot:last-child {
+          border-right: none;
+        }
+
+        .forecast-time {
+          margin: 0;
+          font-size: clamp(8px, 0.9vw, 9px);
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .forecast-temp {
+          margin: 0;
+          font-size: clamp(11px, 1.3vw, 14px);
+          font-weight: 500;
+          color: #ffffff;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .forecast-rain {
+          margin: 0;
+          font-size: clamp(8px, 0.9vw, 9px);
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .forecast-rain-high {
+          color: rgba(147, 197, 253, 0.88);
+        }
+
+        .sun-row {
+          display: flex;
+          justify-content: space-between;
+          gap: clamp(8px, 1vw, 12px);
+        }
+
+        .sun-item-label {
+          margin: 0 0 clamp(2px, 0.3vh, 3px);
+          font-size: clamp(8px, 0.9vw, 9px);
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .sun-item-time {
+          margin: 0;
+          font-size: clamp(10px, 1.1vw, 13px);
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.8);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .status-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: clamp(4px, 0.5vw, 5px);
+          background: rgba(16, 68, 36, 0.8);
+          border: 0.5px solid rgba(74, 222, 128, 0.3);
+          border-radius: clamp(2px, 0.3vw, 3px);
+          padding: clamp(1px, 0.2vh, 1px) clamp(5px, 0.7vw, 7px);
+          font-size: clamp(8px, 0.9vw, 9px);
+          font-weight: 700;
+          color: #4ade80;
+          letter-spacing: 0.8px;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .course-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: clamp(5px, 0.7vw, 7px);
+        }
+
+        .course-card {
+          background: rgba(255, 255, 255, 0.04);
+          border: 0.5px solid rgba(255, 255, 255, 0.08);
+          border-radius: clamp(4px, 0.5vw, 6px);
+          padding: clamp(5px, 0.8vh, 8px) clamp(7px, 0.9vw, 9px);
+        }
+
+        .course-card-label {
+          margin: 0;
+          font-size: clamp(8px, 0.9vw, 9px);
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.5);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .course-card-value {
+          margin: clamp(2px, 0.3vh, 2px) 0 0;
+          font-size: clamp(11px, 1.3vw, 14px);
+          font-weight: 500;
+          color: #ffffff;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .tee-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: clamp(4px, 0.6vh, 6px) 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .tee-row:last-of-type {
+          border-bottom: none;
+        }
+
+        .tee-time {
+          font-size: clamp(11px, 1.2vw, 13px);
+          color: rgba(255, 255, 255, 0.8);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .tee-status {
+          font-size: clamp(10px, 1.1vw, 12px);
+          font-weight: 600;
+          letter-spacing: 0.3px;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .tee-status-green { color: #4ade80; }
+        .tee-status-yellow { color: #fbbf24; }
+        .tee-status-muted { color: rgba(255, 255, 255, 0.5); }
+
+        .tee-footer {
+          margin: clamp(4px, 0.6vh, 5px) 0 0;
+          font-size: clamp(8px, 0.9vw, 9px);
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .tips-list {
+          flex: 1;
+          min-height: 0;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+        }
+
+        .tip-row {
+          display: flex;
+          align-items: flex-start;
+          gap: clamp(6px, 0.8vw, 8px);
+          padding: clamp(4px, 0.6vh, 6px) 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+          flex-shrink: 0;
+        }
+
+        .tip-row:last-child {
+          border-bottom: none;
+        }
+
+        .tip-icon {
+          font-size: clamp(11px, 1.2vw, 13px);
+          color: rgba(255, 255, 255, 0.5);
+          flex-shrink: 0;
+          margin-top: clamp(1px, 0.15vh, 1px);
+          line-height: 1;
+        }
+
+        .tip-text {
+          margin: 0;
+          font-size: clamp(10px, 1.1vw, 12px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.7);
+          line-height: 1.4;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .panel-clock {
+          flex-shrink: 0;
+          border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+          padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.4vw, 16px);
+          text-align: center;
+        }
+
+        .clock-time {
+          margin: 0;
+          font-size: clamp(18px, 2.5vw, 32px);
+          font-weight: 200;
+          color: #ffffff;
+          letter-spacing: clamp(0.5px, 0.1vw, 1px);
+          font-variant-numeric: tabular-nums;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .clock-date {
+          margin: clamp(2px, 0.3vh, 2px) 0 0;
+          font-size: clamp(9px, 1vw, 12px);
+          font-weight: 400;
+          color: rgba(255, 255, 255, 0.5);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+        }
+
+        .player-error {
           position: absolute;
-          top: 88px;
+          top: clamp(8px, 1vh, 12px);
           left: 50%;
           transform: translateX(-50%);
           z-index: 30;
-          font: var(--text-caption);
-          color: var(--text-primary);
-          background: var(--card-bg);
-          border: 0.5px solid var(--card-border);
-          padding: var(--sp-1) var(--sp-2);
-          border-radius: 6px;
-          min-height: 44px;
-          display: flex;
-          align-items: center;
+          margin: 0;
+          padding: clamp(4px, 0.6vh, 6px) clamp(8px, 1vw, 12px);
+          font-size: clamp(10px, 1.1vw, 12px);
+          background: rgba(0, 0, 0, 0.6);
+          border-radius: clamp(4px, 0.5vw, 6px);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
       `}</style>
 
-      {/* Scene layers */}
-      <img
-        className="scene-background"
-        src={BACKGROUND_IMAGE_URL}
-        alt="Olde Sycamore Golf Club"
-      />
-      <div className="weather-tint" />
-      <div className="ambient-tint" />
-      <div className="scene-vignette" />
+      <div className="player-canvas">
+        <WeatherCanvas visualState={visual} />
+      </div>
 
-      {visual.showRain && (
-        <div className="scene-rain">
-          {Array.from(
-            { length: Math.round(18 + visual.rainDensity * 42) },
-            (_, i) => (
-              <div
-                key={i}
-                className="rain-drop"
-                style={{
-                  left: `${(i * 13.7 + (i % 5) * 3) % 100}%`,
-                  height: `${8 + visual.rainDensity * 14 + (i % 4) * 2}px`,
-                  opacity:
-                    visual.rainOpacity *
-                    (0.35 + visual.rainDensity * 0.4) *
-                    (0.85 + (i % 3) * 0.05),
-                  animationDuration: `${(1.1 - visual.rainDensity * 0.5) + (i % 8) * 0.1}s`,
-                  animationDelay: `${(i % 18) * 0.06}s`,
-                  '--rain-angle': `${12 + visual.rainAngle * 0.4}deg`,
-                }}
-              />
-            ),
-          )}
-        </div>
-      )}
+      <div className="player-ui">
+        {error && <p className="player-error">Error: {error}</p>}
 
-      {/* ZONE 1 — TOP BAR */}
-      <header className="zone-top">
-        <div className="top-brand readable">
-          <img className="top-logo" src={LOGO_URL} alt="Olde Sycamore Golf Club" />
-          <p className="top-tagline readable">18 holes · Est. 1997</p>
-        </div>
-        <div />
-        <div className="top-clock readable">
-          <p className="top-clock-time">{clockStr}</p>
-          <p className="top-clock-date">{dateStr}</p>
-        </div>
-      </header>
-
-      {error && (
-        <div className="player-error-badge readable">Error: {error}</div>
-      )}
-
-      {/* ZONE 2 — MAIN CONTENT */}
-      <div className="zone-main">
-        <div className="col-left readable">
-          <p className="type-body type-secondary">{getTimeGreeting(easternHour)}</p>
-          <p className="type-caption type-tertiary">Sunrise 6:08 AM</p>
-          <p className="type-caption type-tertiary">Sunset 8:14 PM</p>
-          {showUvAdvisory && (
-            <p className="uv-advisory-line">High UV · Sun protection advised</p>
-          )}
-        </div>
-
-        <div className="col-center readable">
-          <p className="temp-hero type-display type-primary">
-            {tempDisplay}
-            <span className="temp-degree">°F</span>
-          </p>
-          <svg
-            className="wind-hand"
-            width="48"
-            height="48"
-            viewBox="0 0 48 48"
-            aria-hidden="true"
-          >
-            <line
-              x1="24"
-              y1="24"
-              x2="24"
-              y2="8"
-              stroke="rgba(255, 255, 255, 0.5)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              transform={`rotate(${windDir} 24 24)`}
+        <div className="panel-left">
+          <div className="panel-left-top">
+            <img
+              className="panel-logo"
+              src={LOGO_URL}
+              alt="Olde Sycamore Golf Club"
             />
-          </svg>
-          <p className="condition-label">
-            {w.condition_text || '—'}
-          </p>
-          <p className="feels-label">Feels like {feelsDisplay}°</p>
-        </div>
+            <p className="panel-logo-tagline">18 holes · Est. 1997</p>
+          </div>
 
-        <div className="col-right readable">
-          <div className="compass-bezel">
-            <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
-              <circle
-                cx="60"
-                cy="60"
-                r="54"
-                fill="rgba(0, 0, 0, 0.28)"
-                stroke="rgba(255, 255, 255, 0.25)"
-                strokeWidth="1"
-              />
-              <line x1="60" y1="6" x2="60" y2="10" stroke="#ffffff" strokeWidth="1.5" />
-              <line x1="60" y1="110" x2="60" y2="114" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
-              <line x1="110" y1="60" x2="114" y2="60" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
-              <line x1="6" y1="60" x2="10" y2="60" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
-              <text x="60" y="20" textAnchor="middle" fontSize="9" fontWeight="500" fill="#ffffff">N</text>
-              <text x="100" y="64" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">E</text>
-              <text x="60" y="108" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">S</text>
-              <text x="20" y="64" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">W</text>
-              <g
-                className="compass-needle"
-                transform={`rotate(${windDir} 60 60)`}
-              >
-                <line x1="60" y1="60" x2="60" y2="14" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
-                <line x1="60" y1="60" x2="60" y2="106" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" strokeLinecap="round" />
-                <circle cx="60" cy="60" r="3" fill="#ffffff" />
-              </g>
-            </svg>
-          </div>
-          <div className="compass-meta">
-            <p className="compass-speed readable">
-              {windSpeed != null ? `${Math.round(windSpeed)} mph` : '—'}
+          <div className="panel-left-hero">
+            <p className="hero-eyebrow">Welcome to</p>
+            <h1 className="hero-title">Olde Sycamore</h1>
+            <h1 className="hero-title">Golf Club</h1>
+            <p className="hero-tagline">
+              Experience. Tradition. Community.
             </p>
-            <p className="compass-cardinal readable">{getWindCardinal(windDir)}</p>
-            <p className="compass-gusts readable">Gusts {gustMph} mph</p>
           </div>
-        </div>
-      </div>
 
-      {/* ZONE 3 — BOTTOM PANEL */}
-      <div className="zone-bottom readable">
-        <div className="card-row">
-          <div className="data-card">
-            <p className="card-label">Humidity</p>
-            <p className="card-value">
-              {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
-            </p>
-          </div>
-          <div className="data-card">
-            <p className="card-label">UV Index</p>
-            <p className="card-value">
-              {w.uv_index != null ? w.uv_index : '—'}
-            </p>
-            <p className="card-sub" style={{ color: getUvLabelColor(w.uv_index) }}>
-              {getUvLabel(w.uv_index)}
-            </p>
-          </div>
-          <div className="data-card">
-            <p className="card-label">Rain Chance</p>
-            <p className="card-value">
-              {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
-            </p>
-          </div>
-          <div className="data-card">
-            <p className="card-label">Wind Gusts</p>
-            <p className="card-value">{gustMph} mph</p>
-          </div>
-          <div className="data-card">
-            <p className="card-label">Sunset</p>
-            <p className="card-value">8:14 PM</p>
-          </div>
-        </div>
-        <div className="card-row">
-          {(hourly?.time || []).slice(0, 4).map((t, i) => {
-            const precip = hourly.precip_probability?.[i]
-            const rainHigh = precip != null && precip > 30
-            return (
-              <div key={i} className="data-card forecast-card">
-                <p className="card-label">{formatHourLabel(t)}</p>
-                <p className="card-value">
-                  {hourly.temperature?.[i] != null
-                    ? `${Math.round(hourly.temperature[i])}°`
-                    : '—'}
-                </p>
+          <div className="panel-left-bottom">
+            <p className="announce-label">Club Announcements</p>
+            <div className="announce-body">
+              {ANNOUNCEMENTS.map((msg, i) => (
                 <p
-                  className={`card-sub type-tertiary${rainHigh ? ' forecast-rain-high' : ''}`}
+                  key={i}
+                  className={`announce-text${i === messageIndex ? ' active' : ''}`}
                 >
-                  {precip != null ? `${Math.round(precip)}%` : '—'}
+                  {msg}
                 </p>
+              ))}
+            </div>
+            <div className="announce-dots">
+              {ANNOUNCEMENTS.map((_, i) => (
+                <span
+                  key={i}
+                  className={`announce-dot${i === messageIndex ? ' active' : ''}`}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="panel-divider" aria-hidden="true" />
+
+        <div className="panel-right">
+          <section className="panel-section">
+            <div className="section-header">
+              <span className="section-label">
+                <span className="live-dot" />
+                Live Weather
+              </span>
+              <span className="section-meta">Updated just now</span>
+            </div>
+
+            <div className="weather-hero-row">
+              <p className="weather-temp">{tempDisplay}°</p>
+              <p className="weather-condition">
+                {w.condition_text || '—'}
+              </p>
+              <p className="weather-feels">Feels like {feelsDisplay}°</p>
+            </div>
+
+            <div className="detail-row">
+              <span className="detail-label">Wind</span>
+              <span className="detail-value">{windLabel}</span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Humidity</span>
+              <span className="detail-value">
+                {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">UV Index</span>
+              <span
+                className="detail-value"
+                style={{ color: getUvLabelColor(w.uv_index) }}
+              >
+                {w.uv_index != null ? w.uv_index : '—'} · {getUvLabel(w.uv_index)}
+              </span>
+            </div>
+            <div className="detail-row">
+              <span className="detail-label">Rain Chance</span>
+              <span className="detail-value">
+                {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
+              </span>
+            </div>
+
+            <div className="forecast-block">
+              <div className="forecast-strip">
+                {forecastSlots.map((slot, i) => {
+                  const rainHigh = slot.precip != null && slot.precip > 30
+                  return (
+                    <div key={i} className="forecast-slot">
+                      <p className="forecast-time">
+                        {formatHourCompact(slot.time)}
+                      </p>
+                      <p className="forecast-temp">
+                        {slot.temp != null ? `${Math.round(slot.temp)}°` : '—'}
+                      </p>
+                      <p
+                        className={`forecast-rain${rainHigh ? ' forecast-rain-high' : ''}`}
+                      >
+                        {slot.precip != null ? `${Math.round(slot.precip)}%` : '—'}
+                      </p>
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
+            </div>
+
+            <div className="forecast-block sun-row">
+              <div>
+                <p className="sun-item-label">Sunrise</p>
+                <p className="sun-item-time">6:08 AM</p>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <p className="sun-item-label">Sunset</p>
+                <p className="sun-item-time">8:14 PM</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-header">
+              <span className="section-label">Course Status</span>
+              <span className="status-badge">
+                <span className="live-dot" />
+                OPEN
+              </span>
+            </div>
+            <div className="course-grid">
+              {COURSE_STATS.map((card) => (
+                <div key={card.label} className="course-card">
+                  <p className="course-card-label">{card.label}</p>
+                  <p className="course-card-value">{card.value}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel-section">
+            <div className="section-header">
+              <span className="section-label">Tee Time Availability</span>
+              <span className="section-meta">18-Hole</span>
+            </div>
+            {TEE_TIMES.map((row) => (
+              <div key={row.time} className="tee-row">
+                <span className="tee-time">{row.time}</span>
+                <span className={`tee-status tee-status-${row.tone}`}>
+                  {row.status}
+                </span>
+              </div>
+            ))}
+            <p className="tee-footer">
+              Book at oldesycamoregolf.com · 704-573-1000
+            </p>
+          </section>
+
+          <section className="panel-section-tips">
+            <span className="section-label">Golfer Tips</span>
+            <div className="tips-list">
+              {golferTips.map((tip, i) => (
+                <div key={i} className="tip-row">
+                  <TablerIcon name={tip.icon} />
+                  <p className="tip-text">{tip.text}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <div className="panel-clock">
+            <p className="clock-time">{clockStr}</p>
+            <p className="clock-date">{dateStr}</p>
+          </div>
         </div>
       </div>
-
-      {/* ZONE 4 — MESSAGE BAR */}
-      <footer className="zone-message readable">
-        <img className="msg-logo" src={LOGO_URL} alt="" aria-hidden="true" />
-        <div className="msg-body">
-          {MESSAGES.map((msg, i) => (
-            <p
-              key={i}
-              className={`msg-text readable${i === messageIndex ? ' active' : ''}`}
-            >
-              {msg}
-            </p>
-          ))}
-        </div>
-        <img
-          className="msg-logo msg-logo-mirror"
-          src={LOGO_URL}
-          alt=""
-          aria-hidden="true"
-        />
-      </footer>
     </div>
   )
 }
