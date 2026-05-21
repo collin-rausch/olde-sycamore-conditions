@@ -1,7 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { connectScreenCloud, getScreenCloud } from '@screencloud/apps-sdk'
-import { createVisualStateStore, getVisualState } from '../lib/weatherVisuals'
+import {
+  createVisualStateStore,
+  getVisualState,
+  getEasternHour,
+  getWindCardinal,
+} from '../lib/weatherVisuals'
 
 const DEFAULT_WEATHER = {
   temperature_f: 72,
@@ -41,12 +46,19 @@ function parseHourlyForecast(hf) {
 const BACKGROUND_IMAGE_URL =
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/img-olde-sycamore-1.webp'
 
-function getCardinalLabel(deg) {
-  if (deg == null) return '—'
-  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
-  const idx = Math.round(((deg % 360) + 360) % 360 / 45) % 8
-  return dirs[idx]
-}
+const LOGO_URL =
+  'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
+
+const MESSAGE_BAR_BG = '#1a3d2e'
+
+const MESSAGES = [
+  'Tee times every 9 minutes · Book at oldesycamoregolf.com or call 704-573-1000',
+  'Restaurant & bar open daily · Burgers, pizza, sandwiches & local craft beers',
+  'Practice facilities: driving range, putting green, chipping green & bunker',
+  'Membership available · No initiation fee · Call 704-573-1000 for details',
+  'Dress code: proper golf attire required · No denim or athletic shorts',
+  'Greens top-dressed Tuesdays & Wednesdays through summer · 9 holes each day',
+]
 
 function formatHourLabel(isoOrTime) {
   if (!isoOrTime) return '—'
@@ -54,20 +66,27 @@ function formatHourLabel(isoOrTime) {
   if (d && !isNaN(d.getTime())) {
     return d.toLocaleTimeString('en-US', {
       hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
       timeZone: 'America/New_York',
     })
   }
-  return String(isoOrTime).replace(/.*T(\d{2}):(\d{2}).*/, (_, h, m) => {
-    const hr = parseInt(h, 10) % 12 || 12
-    const ampm = parseInt(h, 10) >= 12 ? 'PM' : 'AM'
-    return `${hr}${ampm}`
-  })
+  return String(isoOrTime)
 }
 
-/** Map flagIntensity 0–1 → animation duration 8s (calm) to 0.8s (windy). */
-function flagSwayDuration(intensity) {
-  const t = Math.min(1, Math.max(0, intensity ?? 0))
-  return `${8 - t * 7.2}s`
+function getUvLabel(uv) {
+  if (uv == null) return '—'
+  if (uv <= 2) return 'Low'
+  if (uv <= 5) return 'Moderate'
+  if (uv <= 7) return 'High'
+  if (uv <= 10) return 'Very High'
+  return 'Extreme'
+}
+
+function getTimeGreeting(hour) {
+  if (hour >= 5 && hour < 12) return 'Good morning for golf'
+  if (hour >= 12 && hour < 17) return 'Good afternoon'
+  return 'Evening round'
 }
 
 export default function Player() {
@@ -75,6 +94,7 @@ export default function Player() {
   const [error, setError] = useState(null)
   const [started, setStarted] = useState(false)
   const [clock, setClock] = useState(() => new Date())
+  const [messageIndex, setMessageIndex] = useState(0)
   const [, setFrame] = useState(0)
   const hasResetVisuals = useRef(false)
 
@@ -148,6 +168,14 @@ export default function Player() {
   }, [])
 
   useEffect(() => {
+    const rotate = setInterval(
+      () => setMessageIndex((i) => (i + 1) % MESSAGES.length),
+      8000,
+    )
+    return () => clearInterval(rotate)
+  }, [])
+
+  useEffect(() => {
     if (!started) return
 
     let rafId
@@ -188,6 +216,19 @@ export default function Player() {
   const feelsDisplay =
     w.feels_like_f != null ? Math.round(w.feels_like_f) : '--'
 
+  const easternHour = getEasternHour(clock)
+  const gustMph = Math.round(
+    windSpeed * (0.9 + (visual.windGustFactor ?? 0) * 0.35),
+  )
+  const dateStr = clock.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  })
+  const showUvAdvisory = (w.uv_index ?? 0) > 7
+  const tempGlowColor = visual.skyTintColor
+
   return (
     <div className="player-scene">
       <style>{`
@@ -198,6 +239,10 @@ export default function Player() {
           overflow: hidden;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
           color: #ffffff;
+        }
+
+        .player-scene .overlay-text {
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
         }
 
         .scene-background {
@@ -232,51 +277,14 @@ export default function Player() {
           overflow: hidden;
         }
 
-        .scene-flag {
-          position: absolute;
-          bottom: 28%;
-          left: 58%;
-          z-index: 6;
-          width: 28px;
-          height: 36px;
-          pointer-events: none;
-          transform-origin: bottom center;
-        }
-
-        .scene-flag-pole {
-          position: absolute;
-          bottom: 0;
-          left: 50%;
-          width: 2px;
-          height: 100%;
-          margin-left: -1px;
-          background: rgba(255, 255, 255, 0.85);
-        }
-
-        .scene-flag-cloth {
-          position: absolute;
-          top: 2px;
-          left: 50%;
-          width: 18px;
-          height: 12px;
-          background: #c41e3a;
-          transform-origin: left center;
-          animation: flag-sway ease-in-out infinite;
-        }
-
-        @keyframes flag-sway {
-          0%, 100% { transform: skewY(0deg) scaleX(1); }
-          50% { transform: skewY(5deg) scaleX(0.9); }
-        }
-
         .rain-drop {
           position: absolute;
           width: 1px;
           background: linear-gradient(
             180deg,
             transparent 0%,
-            rgba(200, 215, 235, 0.15) 40%,
-            rgba(200, 215, 235, 0.45) 100%
+            rgba(255, 255, 255, 0.12) 40%,
+            rgba(255, 255, 255, 0.35) 100%
           );
           animation: rain-fall linear infinite;
         }
@@ -286,13 +294,42 @@ export default function Player() {
             transform: translateY(-30px) rotate(var(--rain-angle, 12deg));
             opacity: 0;
           }
-          8% {
-            opacity: 1;
-          }
+          8% { opacity: 1; }
           100% {
             transform: translateY(105vh) rotate(var(--rain-angle, 12deg));
             opacity: 0;
           }
+        }
+
+        .glass-card {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(14px);
+          -webkit-backdrop-filter: blur(14px);
+          border: 1px solid rgba(255, 255, 255, 0.18);
+          border-radius: 14px;
+          padding: 0.75rem 1rem;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        }
+
+        .glass-card-label {
+          font-size: clamp(0.65rem, 1.1vw, 0.8rem);
+          text-transform: uppercase;
+          letter-spacing: 0.06em;
+          opacity: 0.75;
+          margin: 0 0 0.25rem;
+        }
+
+        .glass-card-value {
+          font-size: clamp(1rem, 1.8vw, 1.25rem);
+          font-weight: 600;
+          margin: 0;
+          line-height: 1.2;
+        }
+
+        .glass-card-sub {
+          font-size: clamp(0.7rem, 1.2vw, 0.85rem);
+          opacity: 0.7;
+          margin: 0.2rem 0 0;
         }
 
         .overlay-header {
@@ -304,37 +341,84 @@ export default function Player() {
           display: flex;
           justify-content: space-between;
           align-items: flex-start;
-          padding: 2rem 2.5rem;
+          padding: 1.75rem 2.5rem 1rem;
           pointer-events: none;
         }
 
-        .club-name {
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(1.4rem, 3vw, 2.4rem);
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-          margin: 0;
+        .header-brand {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.5rem;
         }
 
-        .club-sub {
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(0.85rem, 1.8vw, 1.2rem);
-          opacity: 0.9;
+        .club-logo {
+          height: clamp(52px, 8vw, 72px);
+          width: auto;
+          filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+        }
+
+        .club-tagline {
+          font-size: clamp(0.8rem, 1.5vw, 1rem);
+          opacity: 0.88;
+          margin: 0;
+          letter-spacing: 0.02em;
+        }
+
+        .header-clock {
+          text-align: right;
+        }
+
+        .live-clock {
+          font-size: clamp(2.8rem, 7vw, 5.5rem);
+          font-weight: 700;
+          line-height: 1;
+          font-variant-numeric: tabular-nums;
+          letter-spacing: -0.02em;
+        }
+
+        .live-date {
+          font-size: clamp(0.95rem, 1.8vw, 1.2rem);
+          opacity: 0.65;
           margin: 0.35rem 0 0;
           font-weight: 400;
         }
 
-        .live-clock {
-          font-size: clamp(1.2rem, 2.5vw, 2rem);
-          font-weight: 300;
-          font-variant-numeric: tabular-nums;
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+        .info-rail {
+          position: absolute;
+          top: clamp(7.5rem, 14vh, 10rem);
+          left: 2.5rem;
+          z-index: 20;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          pointer-events: none;
+        }
+
+        .info-rail-item {
+          font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+          opacity: 0.9;
+          margin: 0;
+        }
+
+        .info-rail-greeting {
+          font-size: clamp(1rem, 1.8vw, 1.2rem);
+          font-weight: 500;
+          opacity: 0.95;
+        }
+
+        .uv-advisory {
+          font-size: clamp(0.8rem, 1.4vw, 0.95rem);
+          padding: 0.35rem 0.65rem;
+          border-radius: 6px;
+          background: rgba(0, 0, 0, 0.25);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          display: inline-block;
         }
 
         .overlay-center {
           position: absolute;
-          top: 42%;
+          top: 38%;
           left: 0;
           right: 0;
           width: 100%;
@@ -343,38 +427,85 @@ export default function Player() {
           pointer-events: none;
         }
 
+        .temp-block {
+          position: relative;
+          display: inline-block;
+        }
+
+        .temp-glow {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: clamp(220px, 42vw, 480px);
+          height: clamp(160px, 28vw, 340px);
+          border-radius: 50%;
+          filter: blur(48px);
+          opacity: 0.55;
+          pointer-events: none;
+          transition: background-color 2.5s ease, opacity 2.5s ease;
+        }
+
+        .temp-row {
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 1.25rem;
+        }
+
+        .temp-wind-arrow {
+          font-size: clamp(1.5rem, 3vw, 2.5rem);
+          opacity: 0.55;
+          line-height: 1;
+          display: inline-block;
+        }
+
         .temp-large {
-          font-size: clamp(5rem, 14vw, 11rem);
+          font-size: clamp(5.5rem, 15vw, 12rem);
           font-weight: 200;
           line-height: 1;
-          text-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
           margin: 0;
+          letter-spacing: -0.03em;
         }
 
         .temp-unit {
-          font-size: 0.45em;
+          font-size: 0.38em;
           vertical-align: super;
           font-weight: 300;
+          opacity: 0.85;
+        }
+
+        .condition-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
+        }
+
+        .condition-icon {
+          font-size: clamp(1.4rem, 3vw, 2rem);
+          line-height: 1;
         }
 
         .condition-text {
-          font-size: clamp(1.2rem, 3vw, 2.2rem);
+          font-size: clamp(1.15rem, 2.8vw, 2rem);
           font-weight: 500;
-          margin: 0.25rem 0 0;
+          margin: 0;
           text-transform: capitalize;
-          text-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
         }
 
         .feels-like {
-          font-size: clamp(1rem, 2vw, 1.5rem);
-          opacity: 0.85;
-          margin: 0.5rem 0 0;
+          font-size: clamp(1rem, 2vw, 1.45rem);
+          opacity: 0.8;
+          margin: 0.4rem 0 0;
         }
 
         .wind-compass-wrap {
           position: absolute;
           right: 2.5rem;
-          top: 50%;
+          top: 42%;
           transform: translateY(-50%);
           z-index: 20;
           text-align: center;
@@ -382,109 +513,141 @@ export default function Player() {
         }
 
         .wind-compass {
-          width: clamp(80px, 12vw, 120px);
-          height: clamp(80px, 12vw, 120px);
-          border: 2px solid rgba(255, 255, 255, 0.5);
+          width: clamp(140px, 18vw, 200px);
+          height: clamp(140px, 18vw, 200px);
+          border: 3px solid rgba(255, 255, 255, 0.45);
           border-radius: 50%;
           position: relative;
-          background: rgba(0, 0, 0, 0.2);
+          background: rgba(0, 0, 0, 0.35);
+          backdrop-filter: blur(8px);
           margin: 0 auto;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
         }
 
-        .wind-arrow {
+        .wind-compass-inner {
+          position: absolute;
+          inset: 8%;
+          border-radius: 50%;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .wind-label {
+          position: absolute;
+          font-size: clamp(0.75rem, 1.4vw, 0.95rem);
+          font-weight: 600;
+          opacity: 0.55;
+        }
+
+        .wind-label-n {
+          top: 6%;
+          left: 50%;
+          transform: translateX(-50%);
+          opacity: 1;
+          font-size: clamp(0.9rem, 1.6vw, 1.1rem);
+          color: var(--accent-n, #ffffff);
+          filter: brightness(1.4);
+        }
+
+        .wind-label-s { bottom: 6%; left: 50%; transform: translateX(-50%); }
+        .wind-label-e { right: 6%; top: 50%; transform: translateY(-50%); }
+        .wind-label-w { left: 6%; top: 50%; transform: translateY(-50%); }
+
+        .wind-needle {
           position: absolute;
           top: 50%;
           left: 50%;
-          width: 4px;
-          height: 42%;
-          margin-left: -2px;
-          margin-top: -42%;
+          width: 5px;
+          height: 44%;
+          margin-left: -2.5px;
+          margin-top: -44%;
           background: #ffffff;
           transform-origin: bottom center;
-          border-radius: 2px;
+          border-radius: 3px;
+          box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
         }
 
-        .wind-arrow::after {
+        .wind-needle::after {
           content: '';
           position: absolute;
-          top: -6px;
+          top: -10px;
           left: 50%;
           transform: translateX(-50%);
-          border-left: 6px solid transparent;
-          border-right: 6px solid transparent;
-          border-bottom: 10px solid #ffffff;
+          border-left: 8px solid transparent;
+          border-right: 8px solid transparent;
+          border-bottom: 14px solid #ffffff;
         }
-
-        .wind-label-n, .wind-label-e, .wind-label-s, .wind-label-w {
-          position: absolute;
-          font-size: 0.65rem;
-          opacity: 0.7;
-        }
-        .wind-label-n { top: 4px; left: 50%; transform: translateX(-50%); }
-        .wind-label-s { bottom: 4px; left: 50%; transform: translateX(-50%); }
-        .wind-label-e { right: 6px; top: 50%; transform: translateY(-50%); }
-        .wind-label-w { left: 6px; top: 50%; transform: translateY(-50%); }
 
         .wind-speed-text {
-          font-size: clamp(1rem, 2vw, 1.4rem);
-          margin-top: 0.75rem;
-          font-weight: 600;
+          font-size: clamp(1.6rem, 3.5vw, 2.4rem);
+          margin-top: 1rem;
+          font-weight: 700;
+          line-height: 1;
         }
 
         .wind-cardinal {
-          font-size: clamp(0.85rem, 1.5vw, 1.1rem);
-          opacity: 0.8;
+          font-size: clamp(1rem, 2vw, 1.35rem);
+          opacity: 0.85;
+          margin: 0.35rem 0 0;
+          font-weight: 500;
         }
 
-        .bottom-strip {
+        .wind-gusts {
+          font-size: clamp(0.8rem, 1.4vw, 1rem);
+          opacity: 0.6;
+          margin: 0.25rem 0 0;
+        }
+
+        .bottom-dashboard {
           position: absolute;
-          bottom: 2.8rem;
-          left: 0;
-          right: 0;
+          bottom: 4.5rem;
+          left: 2rem;
+          right: 2rem;
           z-index: 20;
-          background: rgba(0, 0, 0, 0.55);
-          padding: 0.85rem 1.5rem;
+          display: flex;
+          align-items: stretch;
+          justify-content: space-between;
+          gap: 1rem;
+          pointer-events: none;
+        }
+
+        .stat-cards {
           display: flex;
           flex-wrap: wrap;
-          align-items: center;
-          gap: 1.5rem 2rem;
-          font-size: clamp(0.75rem, 1.4vw, 1rem);
+          gap: 0.65rem;
+          flex: 1;
+          align-items: stretch;
         }
 
-        .strip-stat {
-          white-space: nowrap;
+        .stat-cards .glass-card {
+          min-width: clamp(90px, 11vw, 130px);
+          flex: 1 1 auto;
         }
 
-        .strip-stat strong {
-          font-weight: 600;
-          margin-right: 0.35rem;
-        }
-
-        .hourly-forecast {
+        .forecast-cards {
           display: flex;
-          gap: clamp(0.75rem, 2vw, 1.5rem);
-          margin-left: auto;
-          flex-wrap: wrap;
+          gap: 0.65rem;
+          flex-shrink: 0;
         }
 
-        .hour-slot {
+        .forecast-slot {
+          min-width: clamp(72px, 9vw, 100px);
           text-align: center;
-          min-width: 3.5rem;
         }
 
-        .hour-slot .hour-time {
-          opacity: 0.75;
-          font-size: 0.85em;
-        }
-
-        .hour-slot .hour-temp {
+        .forecast-slot .hour-temp {
+          font-size: clamp(1.1rem, 2vw, 1.35rem);
           font-weight: 700;
-          font-size: 1.1em;
+          margin: 0.15rem 0;
         }
 
-        .hour-slot .hour-precip {
-          opacity: 0.7;
-          font-size: 0.8em;
+        .forecast-precip {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.2rem;
+          font-size: clamp(0.75rem, 1.2vw, 0.9rem);
+          opacity: 0.8;
+          margin: 0;
         }
 
         .message-bar {
@@ -493,23 +656,54 @@ export default function Player() {
           left: 0;
           right: 0;
           z-index: 25;
-          background: #1a3d2e;
-          height: 2.8rem;
-          overflow: hidden;
+          height: clamp(3.2rem, 6vh, 4rem);
           display: flex;
           align-items: center;
+          padding: 0 1.5rem;
+          gap: 1.25rem;
         }
 
-        .message-scroll {
-          white-space: nowrap;
-          animation: scroll-msg 28s linear infinite;
+        .message-body {
+          flex: 1;
+          position: relative;
+          height: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+        }
+
+        .message-text {
+          position: absolute;
           font-size: clamp(0.85rem, 1.6vw, 1.1rem);
-          padding-left: 100%;
+          text-align: center;
+          padding: 0 1rem;
+          opacity: 0;
+          transition: opacity 1.2s ease;
+          max-width: 100%;
         }
 
-        @keyframes scroll-msg {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-100%); }
+        .message-text.active {
+          opacity: 1;
+        }
+
+        .message-dots {
+          display: flex;
+          gap: 0.4rem;
+          flex-shrink: 0;
+        }
+
+        .message-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: rgba(255, 255, 255, 0.25);
+          transition: background 0.4s ease, transform 0.4s ease;
+        }
+
+        .message-dot.active {
+          background: rgba(255, 255, 255, 0.9);
+          transform: scale(1.15);
         }
 
         .player-error-badge {
@@ -518,10 +712,11 @@ export default function Player() {
           left: 50%;
           transform: translateX(-50%);
           z-index: 30;
-          background: rgba(196, 30, 58, 0.85);
+          background: rgba(0, 0, 0, 0.65);
           padding: 0.35rem 1rem;
           border-radius: 4px;
           font-size: 0.85rem;
+          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
         }
       `}</style>
 
@@ -584,94 +779,167 @@ export default function Player() {
         </div>
       )}
 
-      {/* Flag sway driven by wind */}
-      <div
-        className="scene-flag"
-        aria-hidden="true"
-      >
-        <div className="scene-flag-pole" />
-        <div
-          className="scene-flag-cloth"
-          style={{ animationDuration: flagSwayDuration(visual.flagIntensity) }}
-        />
-      </div>
-
-      {/* Data overlays */}
+      {/* ── Data overlays ── */}
       <header className="overlay-header">
-        <div>
-          <h1 className="club-name">Olde Sycamore Golf Club</h1>
-          <p className="club-sub">Charlotte, NC · 18 holes · Est. 1997</p>
-          </div>
-        <div className="live-clock">{clockStr}</div>
+        <div className="header-brand">
+          <img
+            className="club-logo overlay-text"
+            src={LOGO_URL}
+            alt="Olde Sycamore Golf Club"
+          />
+          <p className="club-tagline overlay-text">
+            18 holes · Est. 1997 · Tom Jackson design
+          </p>
+        </div>
+        <div className="header-clock overlay-text">
+          <div className="live-clock">{clockStr}</div>
+          <p className="live-date">{dateStr}</p>
+        </div>
       </header>
 
-      {error && <div className="player-error-badge">Error: {error}</div>}
+      {error && (
+        <div className="player-error-badge overlay-text">Error: {error}</div>
+      )}
 
-      <div className="overlay-center">
-        <p className="temp-large">
-          {tempDisplay}
-          <span className="temp-unit">°F</span>
-        </p>
-        <p className="condition-text">{w.condition_text || '—'}</p>
-        <p className="feels-like">Feels like {feelsDisplay}°</p>
+      <div className="info-rail overlay-text">
+        <p className="info-rail-item">Sunrise 6:08 AM</p>
+        <p className="info-rail-greeting">{getTimeGreeting(easternHour)}</p>
+        {showUvAdvisory && (
+          <span className="uv-advisory">
+            High UV · Sun protection advised
+          </span>
+        )}
       </div>
 
-      <div className="wind-compass-wrap">
-        <div className="wind-compass">
-          <span className="wind-label-n">N</span>
-          <span className="wind-label-s">S</span>
-          <span className="wind-label-e">E</span>
-          <span className="wind-label-w">W</span>
+      <div className="overlay-center">
+        <div className="temp-block">
           <div
-            className="wind-arrow"
+            className="temp-glow"
+            style={{ backgroundColor: tempGlowColor }}
+          />
+          <div className="temp-row">
+            <span
+              className="temp-wind-arrow overlay-text"
+              style={{ transform: `rotate(${windDir}deg)` }}
+              aria-hidden="true"
+            >
+              ↑
+            </span>
+            <p className="temp-large overlay-text">
+              {tempDisplay}
+              <span className="temp-unit">°F</span>
+            </p>
+          </div>
+          <div className="condition-row overlay-text">
+            {w.icon && (
+              <span className="condition-icon" aria-hidden="true">
+                {w.icon}
+              </span>
+            )}
+            <p className="condition-text">{w.condition_text || '—'}</p>
+          </div>
+          <p className="feels-like overlay-text">Feels like {feelsDisplay}°</p>
+        </div>
+      </div>
+
+      <div className="wind-compass-wrap overlay-text">
+        <div
+          className="wind-compass"
+          style={{ '--accent-n': visual.skyTintColor }}
+        >
+          <div className="wind-compass-inner" />
+          <span className="wind-label wind-label-n">N</span>
+          <span className="wind-label wind-label-s">S</span>
+          <span className="wind-label wind-label-e">E</span>
+          <span className="wind-label wind-label-w">W</span>
+          <div
+            className="wind-needle"
             style={{ transform: `rotate(${windDir}deg)` }}
           />
         </div>
         <p className="wind-speed-text">
-          {windSpeed != null ? `${Math.round(windSpeed)} mph` : '—'}
+          {windSpeed != null ? `${Math.round(windSpeed)}` : '—'}
+          <span style={{ fontSize: '0.55em', fontWeight: 500 }}> mph</span>
         </p>
-        <p className="wind-cardinal">{getCardinalLabel(windDir)}</p>
+        <p className="wind-cardinal">{getWindCardinal(windDir)}</p>
+        <p className="wind-gusts">Gusts {gustMph} mph</p>
       </div>
 
-      <div className="bottom-strip">
-        <span className="strip-stat">
-          <strong>Humidity</strong>
-          {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
-        </span>
-        <span className="strip-stat">
-          <strong>UV</strong>
-          {w.uv_index != null ? w.uv_index : '—'}
-        </span>
-        <span className="strip-stat">
-          <strong>Precip</strong>
-          {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
-        </span>
-        <span className="strip-stat">
-          <strong>Feels</strong>
-          {feelsDisplay}°
-        </span>
-        <div className="hourly-forecast">
-          {(hourly?.time || []).slice(0, 6).map((t, i) => (
-            <div key={i} className="hour-slot">
-              <div className="hour-time">{formatHourLabel(t)}</div>
-              <div className="hour-temp">
-                {hourly.temperature?.[i] != null
-                  ? `${Math.round(hourly.temperature[i])}°`
-                  : '—'}
+      <div className="bottom-dashboard">
+        <div className="stat-cards">
+          <div className="glass-card">
+            <p className="glass-card-label">Humidity</p>
+            <p className="glass-card-value">
+              {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
+            </p>
+          </div>
+          <div className="glass-card">
+            <p className="glass-card-label">UV Index</p>
+            <p className="glass-card-value">
+              {w.uv_index != null ? w.uv_index : '—'}
+            </p>
+            <p className="glass-card-sub">{getUvLabel(w.uv_index)}</p>
+          </div>
+          <div className="glass-card">
+            <p className="glass-card-label">Rain Chance</p>
+            <p className="glass-card-value">
+              {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
+            </p>
+          </div>
+          <div className="glass-card">
+            <p className="glass-card-label">Sunset</p>
+            <p className="glass-card-value">8:14 PM</p>
+          </div>
+          <div className="glass-card">
+            <p className="glass-card-label">Wind Gusts</p>
+            <p className="glass-card-value">{gustMph} mph</p>
+          </div>
+        </div>
+
+        <div className="forecast-cards">
+          {(hourly?.time || []).slice(0, 4).map((t, i) => {
+            const precip = hourly.precip_probability?.[i]
+            return (
+              <div key={i} className="glass-card forecast-slot">
+                <p className="glass-card-label">{formatHourLabel(t)}</p>
+                <p className="hour-temp overlay-text">
+                  {hourly.temperature?.[i] != null
+                    ? `${Math.round(hourly.temperature[i])}°`
+                    : '—'}
+                </p>
+                <p className="forecast-precip overlay-text">
+                  {precip != null && precip > 0 && (
+                    <span aria-hidden="true">💧</span>
+                  )}
+                  {precip != null ? `${Math.round(precip)}%` : '—'}
+                </p>
               </div>
-              <div className="hour-precip">
-                {hourly.precip_probability?.[i] != null
-                  ? `${Math.round(hourly.precip_probability[i])}%`
-                  : ''}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
-      <div className="message-bar">
-        <div className="message-scroll">
-          Happy hour on the patio 4–7 PM · Twilight rates from $45 · Olde Sycamore Golf Club · Charlotte, NC
+      <div
+        className="message-bar"
+        style={{ backgroundColor: MESSAGE_BAR_BG }}
+      >
+        <div className="message-body">
+          {MESSAGES.map((msg, i) => (
+            <p
+              key={i}
+              className={`message-text overlay-text${i === messageIndex ? ' active' : ''}`}
+            >
+              {msg}
+            </p>
+          ))}
+        </div>
+        <div className="message-dots" aria-hidden="true">
+          {MESSAGES.map((_, i) => (
+            <span
+              key={i}
+              className={`message-dot${i === messageIndex ? ' active' : ''}`}
+            />
+          ))}
         </div>
       </div>
     </div>
