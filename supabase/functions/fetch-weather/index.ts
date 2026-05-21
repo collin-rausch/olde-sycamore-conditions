@@ -42,7 +42,7 @@ Deno.serve(async (_req) => {
     const lat = 35.2271
     const lon = -80.8431
 
-    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover,uv_index,precipitation_probability,is_day&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`
+    const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=America%2FNew_York&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover,uv_index,precipitation_probability,is_day&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`
 
     const response = await fetch(openMeteoUrl)
     if (!response.ok) {
@@ -51,6 +51,7 @@ Deno.serve(async (_req) => {
 
     const data = await response.json()
     const current = data.current
+    const daily = data.daily
 
     const code = current.weather_code as number
     const mapping = WEATHER_CODES[code] || { text: 'Unknown', icon: '❓' }
@@ -75,12 +76,14 @@ Deno.serve(async (_req) => {
       precip_probability: current.precipitation_probability as number,
       is_day: current.is_day as number,
       hourly_forecast: JSON.stringify({
-        time: data.hourly.time.slice(0, 6),
-        temperature: data.hourly.temperature_2m.slice(0, 6),
-        precip_probability: data.hourly.precipitation_probability.slice(0, 6),
-        weather_code: data.hourly.weather_code.slice(0, 6),
-        wind_speed: data.hourly.wind_speed_10m.slice(0, 6),
+        time: data.hourly.time,
+        temperature: data.hourly.temperature_2m,
+        precip_probability: data.hourly.precipitation_probability,
+        weather_code: data.hourly.weather_code,
+        wind_speed: data.hourly.wind_speed_10m,
       }),
+      sunrise_at: daily?.sunrise?.[0] ?? null,
+      sunset_at: daily?.sunset?.[0] ?? null,
       fetched_at: new Date().toISOString(),
     })
 

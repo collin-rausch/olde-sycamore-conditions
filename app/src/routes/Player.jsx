@@ -19,15 +19,8 @@ const DEFAULT_WEATHER = {
   condition_text: 'Clear sky',
   cloud_cover: 15,
   uv_index: 6,
-  precip_probability: 10,
+  precip_probability: null,
   is_day: 1,
-  hourly_forecast: {
-    time: ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00'],
-    temperature: [72, 74, 76, 75, 73, 71],
-    precip_probability: [10, 15, 20, 25, 30, 35],
-    weather_code: [0, 1, 2, 2, 1, 0],
-    wind_speed: [8, 9, 10, 11, 9, 8],
-  },
 }
 
 const visualStore = createVisualStateStore()
@@ -62,16 +55,68 @@ const COURSE_STATS = [
 const TABLER_ICONS_URL =
   'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css'
 
+function toNum(val) {
+  if (val == null || val === '') return null
+  const n = Number(val)
+  return Number.isFinite(n) ? n : null
+}
+
+/** Coerce Supabase row (NUMERIC fields may arrive as strings). */
+function normalizeWeatherRow(row) {
+  if (!row) return null
+  return {
+    ...row,
+    temperature_f: toNum(row.temperature_f),
+    feels_like_f: toNum(row.feels_like_f),
+    humidity: toNum(row.humidity),
+    wind_speed_mph: toNum(row.wind_speed_mph),
+    wind_direction: toNum(row.wind_direction),
+    weather_code: toNum(row.weather_code),
+    cloud_cover: toNum(row.cloud_cover),
+    uv_index: toNum(row.uv_index),
+    precip_probability: toNum(row.precip_probability),
+    is_day: toNum(row.is_day),
+    sunrise_at: row.sunrise_at ?? null,
+    sunset_at: row.sunset_at ?? null,
+  }
+}
+
+function formatSunTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'America/New_York',
+  })
+}
+
 function parseHourlyForecast(hf) {
-  if (!hf) return DEFAULT_WEATHER.hourly_forecast
+  if (!hf) return null
   if (typeof hf === 'string') {
     try {
       return JSON.parse(hf)
     } catch {
-      return DEFAULT_WEATHER.hourly_forecast
+      return null
     }
   }
   return hf
+}
+
+function formatUpdatedAt(fetchedAt) {
+  if (!fetchedAt) return 'Updated just now'
+  const fetched = new Date(fetchedAt)
+  if (Number.isNaN(fetched.getTime())) return 'Updated just now'
+  const mins = Math.floor((Date.now() - fetched.getTime()) / 60000)
+  if (mins < 2) return 'Updated just now'
+  if (mins < 60) return `Updated ${mins} min ago`
+  return `Updated ${fetched.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: 'America/New_York',
+  })}`
 }
 
 function parseSlotHour(isoOrTime) {
@@ -128,8 +173,8 @@ function getForecastSlots(hourly, referenceDate) {
     if (i >= times.length) break
     slots.push({
       time: times[i],
-      temp: hourly.temperature?.[i],
-      precip: hourly.precip_probability?.[i],
+      temp: toNum(hourly.temperature?.[i]),
+      precip: toNum(hourly.precip_probability?.[i]),
     })
   }
   return slots
@@ -159,7 +204,15 @@ function isRainStormCode(code) {
   return [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)
 }
 
-function getGolferTips(weatherCode, windSpeed, uvIndex, precipProb, isDay, hour) {
+function getGolferTips(
+  weatherCode,
+  windSpeed,
+  uvIndex,
+  precipProb,
+  isDay,
+  hour,
+  sunriseLabel,
+) {
   const code = weatherCode ?? 0
   const wind = windSpeed ?? 0
   const uv = uvIndex ?? 0
@@ -217,10 +270,14 @@ function getGolferTips(weatherCode, windSpeed, uvIndex, precipProb, isDay, hour)
   }
 
   if (!day) {
+    const openLine =
+      sunriseLabel && sunriseLabel !== '—'
+        ? `Course closed. Opens at sunrise, ${sunriseLabel} tomorrow.`
+        : 'Course closed. Opens at sunrise tomorrow.'
     return [
       {
         icon: 'moon',
-        text: 'Course closed. Opens at sunrise, 6:08 AM tomorrow.',
+        text: openLine,
       },
       {
         icon: 'phone',
@@ -339,9 +396,8 @@ export default function Player() {
   }, [])
 
   useEffect(() => {
-    if (!started) return
-
     let subscription
+    let cancelled = false
 
     async function loadWeather() {
       const { data, error: fetchError } = await supabase
@@ -351,11 +407,23 @@ export default function Player() {
         .limit(1)
         .maybeSingle()
 
+      if (cancelled) return
+
       if (fetchError) {
         setError(fetchError.message)
-      } else {
-        setWeather(data)
+        setWeather(null)
+        return
       }
+
+      const row = normalizeWeatherRow(data)
+      if (!row) {
+        setError('No weather in cache — run the fetch-weather edge function.')
+        setWeather(null)
+        return
+      }
+
+      setError(null)
+      setWeather(row)
     }
 
     loadWeather()
@@ -366,7 +434,12 @@ export default function Player() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'weather_cache' },
         (payload) => {
-          setWeather(payload.new)
+          if (payload.eventType === 'DELETE') return
+          const row = normalizeWeatherRow(payload.new)
+          if (row) {
+            setError(null)
+            setWeather(row)
+          }
         },
       )
       .subscribe()
@@ -374,10 +447,11 @@ export default function Player() {
     const interval = setInterval(loadWeather, 60000)
 
     return () => {
+      cancelled = true
       subscription?.unsubscribe()
       clearInterval(interval)
     }
-  }, [started])
+  }, [])
 
   useEffect(() => {
     const tick = setInterval(() => setClock(new Date()), 1000)
@@ -413,18 +487,20 @@ export default function Player() {
     return () => cancelAnimationFrame(rafId)
   }, [started, weather])
 
-  const w = weather || DEFAULT_WEATHER
+  const visualWeather = weather ?? DEFAULT_WEATHER
   const hourly = useMemo(
-    () => parseHourlyForecast(w.hourly_forecast),
-    [w.hourly_forecast],
+    () => parseHourlyForecast(weather?.hourly_forecast),
+    [weather?.hourly_forecast],
   )
 
-  const precipProb = w.precip_probability ?? 0
-  const windSpeed = w.wind_speed_mph ?? 0
-  const windDir = w.wind_direction ?? 0
+  const precipProb = weather?.precip_probability ?? null
+  const windSpeed = weather?.wind_speed_mph ?? null
+  const windDir = weather?.wind_direction ?? null
+  const sunriseDisplay = formatSunTime(weather?.sunrise_at)
+  const sunsetDisplay = formatSunTime(weather?.sunset_at)
   const easternHour = getEasternHour(clock)
 
-  const visual = visualStore.current ?? getVisualState(w)
+  const visual = visualStore.current ?? getVisualState(visualWeather)
 
   const clockStr = clock.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -440,29 +516,42 @@ export default function Player() {
   })
 
   const tempDisplay =
-    w.temperature_f != null ? Math.round(w.temperature_f) : '--'
+    weather?.temperature_f != null ? Math.round(weather.temperature_f) : '--'
   const feelsDisplay =
-    w.feels_like_f != null ? Math.round(w.feels_like_f) : '--'
+    weather?.feels_like_f != null ? Math.round(weather.feels_like_f) : '--'
+  const updatedLabel = formatUpdatedAt(weather?.fetched_at)
 
-  const forecastSlots = useMemo(
-    () => getForecastSlots(hourly, clock),
-    [hourly, clock],
-  )
+  const forecastSlots = useMemo(() => {
+    if (!hourly) return []
+    return getForecastSlots(hourly, clock)
+  }, [hourly, clock])
 
   const golferTips = useMemo(
     () =>
       getGolferTips(
-        w.weather_code,
-        windSpeed,
-        w.uv_index,
-        precipProb,
-        w.is_day,
+        weather?.weather_code,
+        windSpeed ?? 0,
+        weather?.uv_index,
+        precipProb ?? 0,
+        weather?.is_day,
         easternHour,
+        sunriseDisplay,
       ),
-    [w.weather_code, w.uv_index, w.is_day, windSpeed, precipProb, easternHour],
+    [
+      weather?.weather_code,
+      weather?.uv_index,
+      weather?.is_day,
+      windSpeed,
+      precipProb,
+      easternHour,
+      sunriseDisplay,
+    ],
   )
 
-  const windLabel = `${getWindCardinal(windDir)} ${windSpeed != null ? `${Math.round(windSpeed)} mph` : '—'}`
+  const windLabel =
+    windSpeed != null
+      ? `${getWindCardinal(windDir ?? 0)} ${Math.round(windSpeed)} mph`
+      : '—'
 
   return (
     <div className="player-root">
@@ -1065,13 +1154,13 @@ export default function Player() {
                 <span className="live-dot" />
                 Live Weather
               </span>
-              <span className="section-meta">Updated just now</span>
+              <span className="section-meta">{updatedLabel}</span>
             </div>
 
             <div className="weather-hero-row">
               <p className="weather-temp">{tempDisplay}°</p>
               <p className="weather-condition">
-                {w.condition_text || '—'}
+                {weather?.condition_text || '—'}
               </p>
               <p className="weather-feels">Feels like {feelsDisplay}°</p>
             </div>
@@ -1083,16 +1172,19 @@ export default function Player() {
             <div className="detail-row">
               <span className="detail-label">Humidity</span>
               <span className="detail-value">
-                {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
+                {weather?.humidity != null
+                  ? `${Math.round(weather.humidity)}%`
+                  : '—'}
               </span>
             </div>
             <div className="detail-row">
               <span className="detail-label">UV Index</span>
               <span
                 className="detail-value"
-                style={{ color: getUvLabelColor(w.uv_index) }}
+                style={{ color: getUvLabelColor(weather?.uv_index) }}
               >
-                {w.uv_index != null ? w.uv_index : '—'} · {getUvLabel(w.uv_index)}
+                {weather?.uv_index != null ? weather.uv_index : '—'} ·{' '}
+                {getUvLabel(weather?.uv_index)}
               </span>
             </div>
             <div className="detail-row">
@@ -1104,35 +1196,44 @@ export default function Player() {
 
             <div className="forecast-block">
               <div className="forecast-strip">
-                {forecastSlots.map((slot, i) => {
-                  const rainHigh = slot.precip != null && slot.precip > 30
-                  return (
-                    <div key={i} className="forecast-slot">
-                      <p className="forecast-time">
-                        {formatHourCompact(slot.time)}
-                      </p>
-                      <p className="forecast-temp">
-                        {slot.temp != null ? `${Math.round(slot.temp)}°` : '—'}
-                      </p>
-                      <p
-                        className={`forecast-rain${rainHigh ? ' forecast-rain-high' : ''}`}
-                      >
-                        {slot.precip != null ? `${Math.round(slot.precip)}%` : '—'}
-                      </p>
-                    </div>
-                  )
-                })}
+                {forecastSlots.length > 0 ? (
+                  forecastSlots.map((slot, i) => {
+                    const precipVal = toNum(slot.precip)
+                    const rainHigh = precipVal != null && precipVal > 30
+                    return (
+                      <div key={i} className="forecast-slot">
+                        <p className="forecast-time">
+                          {formatHourCompact(slot.time)}
+                        </p>
+                        <p className="forecast-temp">
+                          {slot.temp != null
+                            ? `${Math.round(Number(slot.temp))}°`
+                            : '—'}
+                        </p>
+                        <p
+                          className={`forecast-rain${rainHigh ? ' forecast-rain-high' : ''}`}
+                        >
+                          {precipVal != null ? `${Math.round(precipVal)}%` : '—'}
+                        </p>
+                      </div>
+                    )
+                  })
+                ) : (
+                  <p className="section-meta" style={{ width: '100%', textAlign: 'center' }}>
+                    Forecast unavailable
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="forecast-block sun-row">
               <div>
                 <p className="sun-item-label">Sunrise</p>
-                <p className="sun-item-time">6:08 AM</p>
+                <p className="sun-item-time">{sunriseDisplay}</p>
               </div>
               <div style={{ textAlign: 'right' }}>
                 <p className="sun-item-label">Sunset</p>
-                <p className="sun-item-time">8:14 PM</p>
+                <p className="sun-item-time">{sunsetDisplay}</p>
               </div>
             </div>
           </section>
