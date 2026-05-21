@@ -81,15 +81,13 @@ function normalizeWeatherRow(row) {
   }
 }
 
-function formatSunTime(iso) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleTimeString('en-US', {
+function formatSunTime(isoString) {
+  if (!isoString) return '—'
+  return new Date(isoString).toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
-    timeZone: 'America/New_York',
   })
 }
 

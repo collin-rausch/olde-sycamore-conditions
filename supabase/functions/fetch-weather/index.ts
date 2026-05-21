@@ -27,6 +27,16 @@ const WEATHER_CODES: Record<number, { text: string; icon: string }> = {
   99: { text: 'Heavy thunderstorm with hail', icon: '⛈️' },
 }
 
+/** Open-Meteo daily times are local to the requested timezone — add offset for TIMESTAMPTZ. */
+function openMeteoLocalToTimestamptz(local: string | undefined): string | null {
+  if (!local) return null
+  const normalized = local.length === 16 ? `${local}:00` : local
+  const month = parseInt(normalized.slice(5, 7), 10)
+  // US Eastern: EDT Mar–Nov (simplified), EST otherwise
+  const offset = month >= 3 && month <= 11 ? '-04:00' : '-05:00'
+  return `${normalized}${offset}`
+}
+
 Deno.serve(async (_req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
@@ -82,8 +92,8 @@ Deno.serve(async (_req) => {
         weather_code: data.hourly.weather_code,
         wind_speed: data.hourly.wind_speed_10m,
       }),
-      sunrise_at: daily?.sunrise?.[0] ?? null,
-      sunset_at: daily?.sunset?.[0] ?? null,
+      sunrise_at: openMeteoLocalToTimestamptz(daily?.sunrise?.[0]),
+      sunset_at: openMeteoLocalToTimestamptz(daily?.sunset?.[0]),
       fetched_at: new Date().toISOString(),
     })
 
