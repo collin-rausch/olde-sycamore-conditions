@@ -28,6 +28,9 @@ const visualStore = createVisualStateStore()
 const LOGO_URL =
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
 
+const COURSE_PHOTO_URL =
+  'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/img-olde-sycamore-1.webp'
+
 const ANNOUNCEMENTS = [
   'Tee times every 9 minutes · Book at oldesycamoregolf.com · 704-573-1000',
   'Restaurant & bar open daily · Burgers, pizza, sandwiches & local craft beers',
@@ -566,11 +569,14 @@ export default function Player() {
           color: #ffffff;
         }
 
-        .player-canvas {
+        .scene-photo {
           position: absolute;
           inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          object-position: center 40%;
           z-index: 0;
-          overflow: hidden;
           pointer-events: none;
         }
 
@@ -588,19 +594,84 @@ export default function Player() {
           width: 68%;
           height: 100%;
           flex-shrink: 0;
+          overflow: hidden;
+        }
+
+        .panel-left-fx {
+          position: absolute;
+          inset: 0;
+          z-index: 0;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .panel-left-tint {
+          position: absolute;
+          inset: 0;
+          z-index: 1;
+          transition: background-color 3s ease;
+          pointer-events: none;
+        }
+
+        .panel-left-canvas {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          z-index: 2;
+          mix-blend-mode: screen;
+          opacity: 0.4;
+          overflow: hidden;
+          pointer-events: none;
+        }
+
+        .panel-left-canvas .weather-canvas {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+        }
+
+        .panel-left-gradient {
+          position: absolute;
+          left: 0;
+          right: 0;
+          z-index: 3;
+          pointer-events: none;
+        }
+
+        .panel-left-gradient-top {
+          top: 0;
+          height: 45%;
+          background: linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0.65) 0%,
+            transparent 35%
+          );
+        }
+
+        .panel-left-gradient-bottom {
+          bottom: 0;
+          height: 50%;
+          background: linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.75) 0%,
+            transparent 40%
+          );
+        }
+
+        .panel-left-content {
+          position: relative;
+          z-index: 4;
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          overflow: hidden;
+          height: 100%;
+          pointer-events: none;
         }
 
         .panel-left-top {
           padding: clamp(12px, 1.8vh, 20px) clamp(14px, 2vw, 22px);
-          background: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 0.55) 0%,
-            transparent 100%
-          );
           flex-shrink: 0;
         }
 
@@ -634,11 +705,11 @@ export default function Player() {
         }
 
         .hero-eyebrow {
-          margin: 0 0 clamp(4px, 0.6vh, 6px);
-          font-size: clamp(9px, 1vw, 12px);
+          margin: 0 0 clamp(6px, 0.8vh, 10px);
+          font-size: clamp(10px, 1.1vw, 13px);
           font-weight: 300;
-          color: rgba(255, 255, 255, 0.58);
-          letter-spacing: clamp(2px, 0.4vw, 4px);
+          color: rgba(255, 255, 255, 0.6);
+          letter-spacing: clamp(3px, 0.5vw, 5px);
           text-transform: uppercase;
           text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
@@ -646,30 +717,25 @@ export default function Player() {
         .hero-title {
           margin: 0;
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(20px, 4vw, 46px);
+          font-size: clamp(28px, 5vw, 56px);
           font-weight: 700;
           color: #ffffff;
           line-height: 1.05;
-          text-shadow: 0 3px 20px rgba(0, 0, 0, 0.7);
+          text-shadow: 0 4px 30px rgba(0, 0, 0, 0.8);
         }
 
         .hero-tagline {
-          margin: clamp(4px, 0.6vh, 5px) 0 0;
+          margin: clamp(6px, 0.8vh, 10px) 0 0;
           font-family: Georgia, 'Times New Roman', serif;
           font-style: italic;
-          font-size: clamp(10px, 1.5vw, 17px);
+          font-size: clamp(13px, 1.6vw, 19px);
           font-weight: 400;
-          color: rgba(255, 255, 255, 0.68);
+          color: rgba(255, 255, 255, 0.72);
           text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
         .panel-left-bottom {
           padding: clamp(10px, 1.5vh, 16px) clamp(14px, 2vw, 22px);
-          background: linear-gradient(
-            0deg,
-            rgba(0, 0, 0, 0.62) 0%,
-            transparent 100%
-          );
           flex-shrink: 0;
         }
 
@@ -692,11 +758,11 @@ export default function Player() {
           position: absolute;
           inset: 0;
           margin: 0;
-          font-size: clamp(11px, 1.4vw, 16px);
+          font-size: clamp(13px, 1.6vw, 18px);
           font-weight: 300;
           color: rgba(255, 255, 255, 0.94);
           line-height: 1.4;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.92);
           opacity: 0;
           transition: opacity 0.65s ease;
         }
@@ -723,25 +789,13 @@ export default function Player() {
           background: rgba(255, 255, 255, 0.78);
         }
 
-        .panel-divider {
-          width: 1px;
-          flex-shrink: 0;
-          background: linear-gradient(
-            180deg,
-            transparent 0%,
-            rgba(255, 255, 255, 0.1) 15%,
-            rgba(255, 255, 255, 0.1) 85%,
-            transparent 100%
-          );
-        }
-
         .panel-right {
           width: 32%;
           height: 100%;
           flex-shrink: 0;
-          background: rgba(6, 12, 8, 0.72);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
+          background: rgba(0, 0, 0, 0.55);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -1094,56 +1148,73 @@ export default function Player() {
         }
       `}</style>
 
-      <div className="player-canvas">
-        <WeatherCanvas visualState={visual} />
-      </div>
+      <img
+        className="scene-photo"
+        src={COURSE_PHOTO_URL}
+        alt=""
+        aria-hidden="true"
+      />
 
       <div className="player-ui">
         {error && <p className="player-error">Error: {error}</p>}
 
         <div className="panel-left">
-          <div className="panel-left-top">
-            <img
-              className="panel-logo"
-              src={LOGO_URL}
-              alt="Olde Sycamore Golf Club"
+          <div className="panel-left-fx" aria-hidden="true">
+            <div
+              className="panel-left-tint"
+              style={{
+                backgroundColor: visual.skyTintColor,
+                opacity: visual.skyTintOpacity,
+              }}
             />
-            <p className="panel-logo-tagline">18 holes · Est. 1997</p>
-          </div>
-
-          <div className="panel-left-hero">
-            <p className="hero-eyebrow">Welcome to</p>
-            <h1 className="hero-title">Olde Sycamore</h1>
-            <h1 className="hero-title">Golf Club</h1>
-            <p className="hero-tagline">
-              Experience. Tradition. Community.
-            </p>
-          </div>
-
-          <div className="panel-left-bottom">
-            <p className="announce-label">Club Announcements</p>
-            <div className="announce-body">
-              {ANNOUNCEMENTS.map((msg, i) => (
-                <p
-                  key={i}
-                  className={`announce-text${i === messageIndex ? ' active' : ''}`}
-                >
-                  {msg}
-                </p>
-              ))}
+            <div className="panel-left-canvas">
+              <WeatherCanvas visualState={visual} />
             </div>
-            <div className="announce-dots">
-              {ANNOUNCEMENTS.map((_, i) => (
-                <span
-                  key={i}
-                  className={`announce-dot${i === messageIndex ? ' active' : ''}`}
-                />
-              ))}
+            <div className="panel-left-gradient panel-left-gradient-top" />
+            <div className="panel-left-gradient panel-left-gradient-bottom" />
+          </div>
+
+          <div className="panel-left-content">
+            <div className="panel-left-top">
+              <img
+                className="panel-logo"
+                src={LOGO_URL}
+                alt="Olde Sycamore Golf Club"
+              />
+              <p className="panel-logo-tagline">18 holes · Est. 1997</p>
+            </div>
+
+            <div className="panel-left-hero">
+              <p className="hero-eyebrow">Welcome to</p>
+              <h1 className="hero-title">Olde Sycamore Golf Club</h1>
+              <p className="hero-tagline">
+                Experience. Tradition. Community.
+              </p>
+            </div>
+
+            <div className="panel-left-bottom">
+              <p className="announce-label">Club Announcements</p>
+              <div className="announce-body">
+                {ANNOUNCEMENTS.map((msg, i) => (
+                  <p
+                    key={i}
+                    className={`announce-text${i === messageIndex ? ' active' : ''}`}
+                  >
+                    {msg}
+                  </p>
+                ))}
+              </div>
+              <div className="announce-dots">
+                {ANNOUNCEMENTS.map((_, i) => (
+                  <span
+                    key={i}
+                    className={`announce-dot${i === messageIndex ? ' active' : ''}`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="panel-divider" aria-hidden="true" />
 
         <div className="panel-right">
           <section className="panel-section">
