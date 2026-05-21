@@ -49,8 +49,6 @@ const BACKGROUND_IMAGE_URL =
 const LOGO_URL =
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
 
-const MESSAGE_BAR_BG = '#1a3d2e'
-
 const MESSAGES = [
   'Tee times every 9 minutes · Book at oldesycamoregolf.com or call 704-573-1000',
   'Restaurant & bar open daily · Burgers, pizza, sandwiches & local craft beers',
@@ -62,16 +60,25 @@ const MESSAGES = [
 
 function formatHourLabel(isoOrTime) {
   if (!isoOrTime) return '—'
-  const d = isoOrTime.includes('T') ? new Date(isoOrTime) : null
-  if (d && !isNaN(d.getTime())) {
-    return d.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-      timeZone: 'America/New_York',
-    })
+  const s = String(isoOrTime)
+  if (s.includes('T')) {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        hour12: true,
+        timeZone: 'America/New_York',
+      })
+    }
   }
-  return String(isoOrTime)
+  const match = s.match(/^(\d{1,2}):(\d{2})/)
+  if (match) {
+    const h = parseInt(match[1], 10)
+    const hour12 = h % 12 === 0 ? 12 : h % 12
+    const period = h >= 12 ? 'PM' : 'AM'
+    return `${hour12} ${period}`
+  }
+  return s
 }
 
 function getUvLabel(uv) {
@@ -83,9 +90,18 @@ function getUvLabel(uv) {
   return 'Extreme'
 }
 
+function getUvLabelColor(uv) {
+  if (uv == null) return 'rgba(255, 255, 255, 0.6)'
+  if (uv <= 2) return 'rgba(255, 255, 255, 0.6)'
+  if (uv <= 5) return '#fbbf24'
+  if (uv <= 7) return '#f97316'
+  if (uv <= 10) return '#ef4444'
+  return '#a855f7'
+}
+
 function getTimeGreeting(hour) {
   if (hour >= 5 && hour < 12) return 'Good morning for golf'
-  if (hour >= 12 && hour < 17) return 'Good afternoon'
+  if (hour >= 12 && hour < 17) return 'Good afternoon for golf'
   return 'Evening round'
 }
 
@@ -227,23 +243,76 @@ export default function Player() {
     timeZone: 'America/New_York',
   })
   const showUvAdvisory = (w.uv_index ?? 0) > 7
-  const tempGlowColor = visual.skyTintColor
+
+  const sceneStyle = {
+    '--sky-tint-color': visual.skyTintColor,
+    '--sky-tint-opacity': visual.skyTintOpacity,
+    '--ambient-tint': visual.ambientTintColor,
+    '--vignette-opacity': visual.vignetteOpacity,
+    '--scene-filter': `brightness(${visual.sceneExposure}) contrast(${visual.sceneContrast}) saturate(${visual.sceneSaturation})`,
+  }
 
   return (
-    <div className="player-scene">
+    <div className="player-scene" style={sceneStyle}>
       <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600&display=swap');
+
         .player-scene {
+          --sp-1: 8px;
+          --sp-2: 16px;
+          --sp-3: 24px;
+          --sp-4: 32px;
+          --sp-6: 48px;
+          --text-display: 200 clamp(64px, 10vw, 88px) / 1 'Inter', sans-serif;
+          --text-clock: 600 clamp(32px, 5vw, 52px) / 1 'Inter', sans-serif;
+          --text-heading: 600 clamp(15px, 2vw, 20px) / 1.2 'Inter', sans-serif;
+          --text-body: 400 clamp(13px, 1.6vw, 16px) / 1.4 'Inter', sans-serif;
+          --text-caption: 400 clamp(11px, 1.1vw, 12px) / 1.35 'Inter', sans-serif;
+          --text-primary: #ffffff;
+          --text-secondary: rgba(255, 255, 255, 0.82);
+          --text-tertiary: rgba(255, 255, 255, 0.62);
+          --brand-green: #1a3d2e;
+          --card-bg: rgba(0, 0, 0, 0.38);
+          --card-border: rgba(255, 255, 255, 0.14);
+          --uv-advisory: #f97316;
+          --rain-highlight: rgba(147, 197, 253, 0.9);
           position: relative;
           width: 100vw;
           height: 100vh;
           overflow: hidden;
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          color: #ffffff;
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          color: var(--text-primary);
         }
 
-        .player-scene .overlay-text {
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+        .player-scene .readable {
+          text-shadow: 0 1px 6px rgba(0, 0, 0, 0.85);
         }
+
+        .type-display {
+          font: var(--text-display);
+          color: var(--text-primary);
+        }
+
+        .type-clock {
+          font: var(--text-clock);
+          color: var(--text-primary);
+        }
+
+        .type-heading {
+          font: var(--text-heading);
+        }
+
+        .type-body {
+          font: var(--text-body);
+        }
+
+        .type-caption {
+          font: var(--text-caption);
+        }
+
+        .type-primary { color: var(--text-primary); }
+        .type-secondary { color: var(--text-secondary); }
+        .type-tertiary { color: var(--text-tertiary); }
 
         .scene-background {
           position: absolute;
@@ -253,6 +322,7 @@ export default function Player() {
           height: 100%;
           object-fit: cover;
           object-position: center 60%;
+          filter: var(--scene-filter);
           transition: filter 2.5s ease;
         }
 
@@ -265,14 +335,30 @@ export default function Player() {
           transition: background-color 2.5s ease, opacity 2.5s ease;
         }
 
-        .weather-tint { z-index: 2; }
-        .ambient-tint { z-index: 3; }
-        .scene-vignette { z-index: 4; }
+        .weather-tint {
+          z-index: 2;
+          background-color: var(--sky-tint-color);
+          opacity: var(--sky-tint-opacity);
+        }
+
+        .ambient-tint {
+          z-index: 3;
+          background-color: var(--ambient-tint);
+        }
+
+        .scene-vignette {
+          z-index: 4;
+          background: radial-gradient(
+            ellipse at center,
+            transparent 42%,
+            rgba(0, 0, 0, var(--vignette-opacity)) 100%
+          );
+        }
 
         .scene-rain {
           position: absolute;
           inset: 0;
-          z-index: 5;
+          z-index: 6;
           pointer-events: none;
           overflow: hidden;
         }
@@ -301,459 +387,304 @@ export default function Player() {
           }
         }
 
-        .glass-card {
-          background: rgba(255, 255, 255, 0.1);
-          backdrop-filter: blur(14px);
-          -webkit-backdrop-filter: blur(14px);
-          border: 1px solid rgba(255, 255, 255, 0.18);
-          border-radius: 14px;
-          padding: 0.75rem 1rem;
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-        }
-
-        .glass-card-label {
-          font-size: clamp(0.65rem, 1.1vw, 0.8rem);
-          text-transform: uppercase;
-          letter-spacing: 0.06em;
-          opacity: 0.75;
-          margin: 0 0 0.25rem;
-        }
-
-        .glass-card-value {
-          font-size: clamp(1rem, 1.8vw, 1.25rem);
-          font-weight: 600;
-          margin: 0;
-          line-height: 1.2;
-        }
-
-        .glass-card-sub {
-          font-size: clamp(0.7rem, 1.2vw, 0.85rem);
-          opacity: 0.7;
-          margin: 0.2rem 0 0;
-        }
-
-        .overlay-header {
+        /* ZONE 1 — TOP BAR */
+        .zone-top {
           position: absolute;
           top: 0;
           left: 0;
           right: 0;
+          height: 80px;
           z-index: 20;
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          padding: 1.75rem 2.5rem 1rem;
+          display: grid;
+          grid-template-columns: 1fr 1fr 1fr;
+          align-items: center;
+          padding: 0 var(--sp-4);
+          background: linear-gradient(180deg, rgba(0, 0, 0, 0.52) 0%, transparent 100%);
           pointer-events: none;
         }
 
-        .header-brand {
+        .top-brand {
           display: flex;
           flex-direction: column;
-          align-items: flex-start;
-          gap: 0.5rem;
+          gap: var(--sp-1);
         }
 
-        .club-logo {
-          height: clamp(52px, 8vw, 72px);
+        .top-logo {
+          height: 40px;
           width: auto;
-          filter: brightness(0) invert(1) drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+          filter: brightness(10);
         }
 
-        .club-tagline {
-          font-size: clamp(0.8rem, 1.5vw, 1rem);
-          opacity: 0.88;
+        .top-tagline {
+          font: var(--text-caption);
+          color: var(--text-tertiary);
           margin: 0;
-          letter-spacing: 0.02em;
         }
 
-        .header-clock {
+        .top-clock {
           text-align: right;
         }
 
-        .live-clock {
-          font-size: clamp(2.8rem, 7vw, 5.5rem);
-          font-weight: 700;
-          line-height: 1;
-          font-variant-numeric: tabular-nums;
-          letter-spacing: -0.02em;
-        }
-
-        .live-date {
-          font-size: clamp(0.95rem, 1.8vw, 1.2rem);
-          opacity: 0.65;
-          margin: 0.35rem 0 0;
-          font-weight: 400;
-        }
-
-        .info-rail {
-          position: absolute;
-          top: clamp(7.5rem, 14vh, 10rem);
-          left: 2.5rem;
-          z-index: 20;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-          pointer-events: none;
-        }
-
-        .info-rail-item {
-          font-size: clamp(0.85rem, 1.5vw, 1.05rem);
-          opacity: 0.9;
+        .top-clock-time {
+          font: var(--text-clock);
+          color: var(--text-primary);
           margin: 0;
+          font-variant-numeric: tabular-nums;
         }
 
-        .info-rail-greeting {
-          font-size: clamp(1rem, 1.8vw, 1.2rem);
-          font-weight: 500;
-          opacity: 0.95;
+        .top-clock-date {
+          font: var(--text-caption);
+          color: var(--text-tertiary);
+          margin: var(--sp-1) 0 0;
         }
 
-        .uv-advisory {
-          font-size: clamp(0.8rem, 1.4vw, 0.95rem);
-          padding: 0.35rem 0.65rem;
-          border-radius: 6px;
-          background: rgba(0, 0, 0, 0.25);
-          border: 1px solid rgba(255, 255, 255, 0.15);
-          display: inline-block;
-        }
-
-        .overlay-center {
+        /* ZONE 2 — MAIN */
+        .zone-main {
           position: absolute;
-          top: 38%;
+          top: 80px;
           left: 0;
           right: 0;
-          width: 100%;
+          bottom: 220px;
           z-index: 20;
+          display: grid;
+          grid-template-columns: 1fr 2fr 1fr;
+          align-items: center;
+          pointer-events: none;
+        }
+
+        .col-left {
+          display: flex;
+          flex-direction: column;
+          gap: var(--sp-2);
+          padding-left: var(--sp-4);
+          align-self: center;
+        }
+
+        .col-center {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
           text-align: center;
-          pointer-events: none;
+          gap: var(--sp-2);
         }
 
-        .temp-block {
-          position: relative;
-          display: inline-block;
-        }
-
-        .temp-glow {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: clamp(220px, 42vw, 480px);
-          height: clamp(160px, 28vw, 340px);
-          border-radius: 50%;
-          filter: blur(48px);
-          opacity: 0.55;
-          pointer-events: none;
-          transition: background-color 2.5s ease, opacity 2.5s ease;
-        }
-
-        .temp-row {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 1.25rem;
-        }
-
-        .temp-wind-arrow {
-          font-size: clamp(1.5rem, 3vw, 2.5rem);
-          opacity: 0.55;
-          line-height: 1;
-          display: inline-block;
-        }
-
-        .temp-large {
-          font-size: clamp(5.5rem, 15vw, 12rem);
-          font-weight: 200;
-          line-height: 1;
+        .temp-hero {
           margin: 0;
-          letter-spacing: -0.03em;
-        }
-
-        .temp-unit {
-          font-size: 0.38em;
-          vertical-align: super;
-          font-weight: 300;
-          opacity: 0.85;
-        }
-
-        .condition-row {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-          margin-top: 0.5rem;
-        }
-
-        .condition-icon {
-          font-size: clamp(1.4rem, 3vw, 2rem);
           line-height: 1;
         }
 
-        .condition-text {
-          font-size: clamp(1.15rem, 2.8vw, 2rem);
-          font-weight: 500;
+        .temp-degree {
+          font-size: 0.42em;
+          font-weight: 200;
+          vertical-align: super;
+        }
+
+        .wind-hand {
+          display: block;
+          margin: var(--sp-1) 0;
+        }
+
+        .condition-label {
+          font: var(--text-heading);
+          color: var(--text-secondary);
           margin: 0;
           text-transform: capitalize;
         }
 
-        .feels-like {
-          font-size: clamp(1rem, 2vw, 1.45rem);
-          opacity: 0.8;
-          margin: 0.4rem 0 0;
-        }
-
-        .wind-compass-wrap {
-          position: absolute;
-          right: 2.5rem;
-          top: 42%;
-          transform: translateY(-50%);
-          z-index: 20;
-          text-align: center;
-          pointer-events: none;
-        }
-
-        .wind-compass {
-          width: clamp(140px, 18vw, 200px);
-          height: clamp(140px, 18vw, 200px);
-          border: 3px solid rgba(255, 255, 255, 0.45);
-          border-radius: 50%;
-          position: relative;
-          background: rgba(0, 0, 0, 0.35);
-          backdrop-filter: blur(8px);
-          margin: 0 auto;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
-        }
-
-        .wind-compass-inner {
-          position: absolute;
-          inset: 8%;
-          border-radius: 50%;
-          border: 1px solid rgba(255, 255, 255, 0.12);
-        }
-
-        .wind-label {
-          position: absolute;
-          font-size: clamp(0.75rem, 1.4vw, 0.95rem);
-          font-weight: 600;
-          opacity: 0.55;
-        }
-
-        .wind-label-n {
-          top: 6%;
-          left: 50%;
-          transform: translateX(-50%);
-          opacity: 1;
-          font-size: clamp(0.9rem, 1.6vw, 1.1rem);
-          color: var(--accent-n, #ffffff);
-          filter: brightness(1.4);
-        }
-
-        .wind-label-s { bottom: 6%; left: 50%; transform: translateX(-50%); }
-        .wind-label-e { right: 6%; top: 50%; transform: translateY(-50%); }
-        .wind-label-w { left: 6%; top: 50%; transform: translateY(-50%); }
-
-        .wind-needle {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          width: 5px;
-          height: 44%;
-          margin-left: -2.5px;
-          margin-top: -44%;
-          background: #ffffff;
-          transform-origin: bottom center;
-          border-radius: 3px;
-          box-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
-        }
-
-        .wind-needle::after {
-          content: '';
-          position: absolute;
-          top: -10px;
-          left: 50%;
-          transform: translateX(-50%);
-          border-left: 8px solid transparent;
-          border-right: 8px solid transparent;
-          border-bottom: 14px solid #ffffff;
-        }
-
-        .wind-speed-text {
-          font-size: clamp(1.6rem, 3.5vw, 2.4rem);
-          margin-top: 1rem;
-          font-weight: 700;
-          line-height: 1;
-        }
-
-        .wind-cardinal {
-          font-size: clamp(1rem, 2vw, 1.35rem);
-          opacity: 0.85;
-          margin: 0.35rem 0 0;
-          font-weight: 500;
-        }
-
-        .wind-gusts {
-          font-size: clamp(0.8rem, 1.4vw, 1rem);
-          opacity: 0.6;
-          margin: 0.25rem 0 0;
-        }
-
-        .bottom-dashboard {
-          position: absolute;
-          bottom: 4.5rem;
-          left: 2rem;
-          right: 2rem;
-          z-index: 20;
-          display: flex;
-          align-items: stretch;
-          justify-content: space-between;
-          gap: 1rem;
-          pointer-events: none;
-        }
-
-        .stat-cards {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.65rem;
-          flex: 1;
-          align-items: stretch;
-        }
-
-        .stat-cards .glass-card {
-          min-width: clamp(90px, 11vw, 130px);
-          flex: 1 1 auto;
-        }
-
-        .forecast-cards {
-          display: flex;
-          gap: 0.65rem;
-          flex-shrink: 0;
-        }
-
-        .forecast-slot {
-          min-width: clamp(72px, 9vw, 100px);
-          text-align: center;
-        }
-
-        .forecast-slot .hour-temp {
-          font-size: clamp(1.1rem, 2vw, 1.35rem);
-          font-weight: 700;
-          margin: 0.15rem 0;
-        }
-
-        .forecast-precip {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.2rem;
-          font-size: clamp(0.75rem, 1.2vw, 0.9rem);
-          opacity: 0.8;
+        .feels-label {
+          font: var(--text-body);
+          color: var(--text-tertiary);
           margin: 0;
         }
 
-        .message-bar {
+        .uv-advisory-line {
+          font: var(--text-caption);
+          color: var(--uv-advisory);
+          margin: 0;
+        }
+
+        .col-right {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding-right: var(--sp-4);
+          align-self: center;
+        }
+
+        .compass-bezel {
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border-radius: 50%;
+        }
+
+        .compass-needle {
+          transition: transform 1.5s ease;
+        }
+
+        .compass-meta {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: var(--sp-1);
+          margin-top: var(--sp-2);
+          min-height: 44px;
+        }
+
+        .compass-speed {
+          font: var(--text-heading);
+          color: var(--text-primary);
+          margin: 0;
+        }
+
+        .compass-cardinal,
+        .compass-gusts {
+          font: var(--text-caption);
+          color: var(--text-tertiary);
+          margin: 0;
+        }
+
+        /* ZONE 3 — BOTTOM PANEL */
+        .zone-bottom {
+          position: absolute;
+          bottom: 36px;
+          left: 0;
+          right: 0;
+          z-index: 20;
+          padding: 0 var(--sp-4);
+          display: flex;
+          flex-direction: column;
+          gap: var(--sp-2);
+          pointer-events: none;
+        }
+
+        .card-row {
+          display: flex;
+          gap: var(--sp-2);
+          align-items: stretch;
+        }
+
+        .data-card {
+          flex: 1;
+          background: var(--card-bg);
+          border: 0.5px solid var(--card-border);
+          border-radius: 10px;
+          padding: var(--sp-2) var(--sp-3);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          min-height: 44px;
+        }
+
+        .card-label {
+          font: var(--text-caption);
+          color: var(--text-tertiary);
+          text-transform: uppercase;
+          letter-spacing: 0.8px;
+          margin: 0;
+        }
+
+        .card-value {
+          font: var(--text-heading);
+          color: var(--text-primary);
+          margin: 4px 0 0;
+        }
+
+        .card-sub {
+          font: var(--text-caption);
+          margin: 4px 0 0;
+        }
+
+        .forecast-card {
+          text-align: center;
+        }
+
+        .forecast-rain-high {
+          color: var(--rain-highlight);
+        }
+
+        /* ZONE 4 — MESSAGE BAR */
+        .zone-message {
           position: absolute;
           bottom: 0;
           left: 0;
           right: 0;
+          height: 36px;
           z-index: 25;
-          height: clamp(3.2rem, 6vh, 4rem);
+          background: var(--brand-green);
+          border-top: 0.5px solid rgba(255, 255, 255, 0.1);
           display: flex;
           align-items: center;
-          padding: 0 1.5rem;
-          gap: 1.25rem;
+          justify-content: center;
+          gap: var(--sp-3);
+          padding: 0 var(--sp-4);
+          pointer-events: none;
         }
 
-        .message-body {
+        .msg-logo {
+          height: 18px;
+          width: auto;
+          filter: brightness(10);
+          opacity: 0.5;
+          flex-shrink: 0;
+        }
+
+        .msg-logo-mirror {
+          transform: scaleX(-1);
+        }
+
+        .msg-body {
           flex: 1;
           position: relative;
           height: 100%;
           display: flex;
           align-items: center;
           justify-content: center;
-          overflow: hidden;
+          min-width: 0;
         }
 
-        .message-text {
+        .msg-text {
           position: absolute;
-          font-size: clamp(0.85rem, 1.6vw, 1.1rem);
+          font: var(--text-caption);
+          color: var(--text-secondary);
           text-align: center;
-          padding: 0 1rem;
+          margin: 0;
+          padding: 0 var(--sp-2);
           opacity: 0;
           transition: opacity 1.2s ease;
           max-width: 100%;
         }
 
-        .message-text.active {
+        .msg-text.active {
           opacity: 1;
-        }
-
-        .message-dots {
-          display: flex;
-          gap: 0.4rem;
-          flex-shrink: 0;
-        }
-
-        .message-dot {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.25);
-          transition: background 0.4s ease, transform 0.4s ease;
-        }
-
-        .message-dot.active {
-          background: rgba(255, 255, 255, 0.9);
-          transform: scale(1.15);
         }
 
         .player-error-badge {
           position: absolute;
-          top: 5.5rem;
+          top: 88px;
           left: 50%;
           transform: translateX(-50%);
           z-index: 30;
-          background: rgba(0, 0, 0, 0.65);
-          padding: 0.35rem 1rem;
-          border-radius: 4px;
-          font-size: 0.85rem;
-          text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+          font: var(--text-caption);
+          color: var(--text-primary);
+          background: var(--card-bg);
+          border: 0.5px solid var(--card-border);
+          padding: var(--sp-1) var(--sp-2);
+          border-radius: 6px;
+          min-height: 44px;
+          display: flex;
+          align-items: center;
         }
       `}</style>
 
-      {/* 1. Background photo */}
+      {/* Scene layers */}
       <img
         className="scene-background"
         src={BACKGROUND_IMAGE_URL}
         alt="Olde Sycamore Golf Club"
-        style={{
-          filter: `brightness(${visual.sceneExposure}) contrast(${visual.sceneContrast}) saturate(${visual.sceneSaturation})`,
-        }}
       />
+      <div className="weather-tint" />
+      <div className="ambient-tint" />
+      <div className="scene-vignette" />
 
-      {/* 2. Sky tint overlay */}
-      <div
-        className="weather-tint"
-        style={{
-          backgroundColor: visual.skyTintColor,
-          opacity: visual.skyTintOpacity,
-        }}
-      />
-
-      {/* 3. Ambient color temperature */}
-      <div
-        className="ambient-tint"
-        style={{ backgroundColor: visual.ambientTintColor }}
-      />
-
-      {/* 4. Vignette */}
-      <div
-        className="scene-vignette"
-        style={{
-          background: `radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, ${visual.vignetteOpacity}) 100%)`,
-        }}
-      />
-
-      {/* 5. Rain animation layer */}
       {visual.showRain && (
         <div className="scene-rain">
           {Array.from(
@@ -779,138 +710,150 @@ export default function Player() {
         </div>
       )}
 
-      {/* ── Data overlays ── */}
-      <header className="overlay-header">
-        <div className="header-brand">
-          <img
-            className="club-logo overlay-text"
-            src={LOGO_URL}
-            alt="Olde Sycamore Golf Club"
-          />
-          <p className="club-tagline overlay-text">
-            18 holes · Est. 1997 · Tom Jackson design
-          </p>
+      {/* ZONE 1 — TOP BAR */}
+      <header className="zone-top">
+        <div className="top-brand readable">
+          <img className="top-logo" src={LOGO_URL} alt="Olde Sycamore Golf Club" />
+          <p className="top-tagline readable">18 holes · Est. 1997</p>
         </div>
-        <div className="header-clock overlay-text">
-          <div className="live-clock">{clockStr}</div>
-          <p className="live-date">{dateStr}</p>
+        <div />
+        <div className="top-clock readable">
+          <p className="top-clock-time">{clockStr}</p>
+          <p className="top-clock-date">{dateStr}</p>
         </div>
       </header>
 
       {error && (
-        <div className="player-error-badge overlay-text">Error: {error}</div>
+        <div className="player-error-badge readable">Error: {error}</div>
       )}
 
-      <div className="info-rail overlay-text">
-        <p className="info-rail-item">Sunrise 6:08 AM</p>
-        <p className="info-rail-greeting">{getTimeGreeting(easternHour)}</p>
-        {showUvAdvisory && (
-          <span className="uv-advisory">
-            High UV · Sun protection advised
-          </span>
-        )}
-      </div>
+      {/* ZONE 2 — MAIN CONTENT */}
+      <div className="zone-main">
+        <div className="col-left readable">
+          <p className="type-body type-secondary">{getTimeGreeting(easternHour)}</p>
+          <p className="type-caption type-tertiary">Sunrise 6:08 AM</p>
+          <p className="type-caption type-tertiary">Sunset 8:14 PM</p>
+          {showUvAdvisory && (
+            <p className="uv-advisory-line">High UV · Sun protection advised</p>
+          )}
+        </div>
 
-      <div className="overlay-center">
-        <div className="temp-block">
-          <div
-            className="temp-glow"
-            style={{ backgroundColor: tempGlowColor }}
-          />
-          <div className="temp-row">
-            <span
-              className="temp-wind-arrow overlay-text"
-              style={{ transform: `rotate(${windDir}deg)` }}
-              aria-hidden="true"
-            >
-              ↑
-            </span>
-            <p className="temp-large overlay-text">
-              {tempDisplay}
-              <span className="temp-unit">°F</span>
+        <div className="col-center readable">
+          <p className="temp-hero type-display type-primary">
+            {tempDisplay}
+            <span className="temp-degree">°F</span>
+          </p>
+          <svg
+            className="wind-hand"
+            width="48"
+            height="48"
+            viewBox="0 0 48 48"
+            aria-hidden="true"
+          >
+            <line
+              x1="24"
+              y1="24"
+              x2="24"
+              y2="8"
+              stroke="rgba(255, 255, 255, 0.5)"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              transform={`rotate(${windDir} 24 24)`}
+            />
+          </svg>
+          <p className="condition-label">
+            {w.condition_text || '—'}
+          </p>
+          <p className="feels-label">Feels like {feelsDisplay}°</p>
+        </div>
+
+        <div className="col-right readable">
+          <div className="compass-bezel">
+            <svg width="120" height="120" viewBox="0 0 120 120" aria-hidden="true">
+              <circle
+                cx="60"
+                cy="60"
+                r="54"
+                fill="rgba(0, 0, 0, 0.28)"
+                stroke="rgba(255, 255, 255, 0.25)"
+                strokeWidth="1"
+              />
+              <line x1="60" y1="6" x2="60" y2="10" stroke="#ffffff" strokeWidth="1.5" />
+              <line x1="60" y1="110" x2="60" y2="114" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
+              <line x1="110" y1="60" x2="114" y2="60" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
+              <line x1="6" y1="60" x2="10" y2="60" stroke="rgba(255, 255, 255, 0.5)" strokeWidth="1.5" />
+              <text x="60" y="20" textAnchor="middle" fontSize="9" fontWeight="500" fill="#ffffff">N</text>
+              <text x="100" y="64" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">E</text>
+              <text x="60" y="108" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">S</text>
+              <text x="20" y="64" textAnchor="middle" fontSize="9" fontWeight="500" fill="rgba(255, 255, 255, 0.45)">W</text>
+              <g
+                className="compass-needle"
+                transform={`rotate(${windDir} 60 60)`}
+              >
+                <line x1="60" y1="60" x2="60" y2="14" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="60" y1="60" x2="60" y2="106" stroke="rgba(255, 255, 255, 0.3)" strokeWidth="1.5" strokeLinecap="round" />
+                <circle cx="60" cy="60" r="3" fill="#ffffff" />
+              </g>
+            </svg>
+          </div>
+          <div className="compass-meta">
+            <p className="compass-speed readable">
+              {windSpeed != null ? `${Math.round(windSpeed)} mph` : '—'}
             </p>
+            <p className="compass-cardinal readable">{getWindCardinal(windDir)}</p>
+            <p className="compass-gusts readable">Gusts {gustMph} mph</p>
           </div>
-          <div className="condition-row overlay-text">
-            {w.icon && (
-              <span className="condition-icon" aria-hidden="true">
-                {w.icon}
-              </span>
-            )}
-            <p className="condition-text">{w.condition_text || '—'}</p>
-          </div>
-          <p className="feels-like overlay-text">Feels like {feelsDisplay}°</p>
         </div>
       </div>
 
-      <div className="wind-compass-wrap overlay-text">
-        <div
-          className="wind-compass"
-          style={{ '--accent-n': visual.skyTintColor }}
-        >
-          <div className="wind-compass-inner" />
-          <span className="wind-label wind-label-n">N</span>
-          <span className="wind-label wind-label-s">S</span>
-          <span className="wind-label wind-label-e">E</span>
-          <span className="wind-label wind-label-w">W</span>
-          <div
-            className="wind-needle"
-            style={{ transform: `rotate(${windDir}deg)` }}
-          />
-        </div>
-        <p className="wind-speed-text">
-          {windSpeed != null ? `${Math.round(windSpeed)}` : '—'}
-          <span style={{ fontSize: '0.55em', fontWeight: 500 }}> mph</span>
-        </p>
-        <p className="wind-cardinal">{getWindCardinal(windDir)}</p>
-        <p className="wind-gusts">Gusts {gustMph} mph</p>
-      </div>
-
-      <div className="bottom-dashboard">
-        <div className="stat-cards">
-          <div className="glass-card">
-            <p className="glass-card-label">Humidity</p>
-            <p className="glass-card-value">
+      {/* ZONE 3 — BOTTOM PANEL */}
+      <div className="zone-bottom readable">
+        <div className="card-row">
+          <div className="data-card">
+            <p className="card-label">Humidity</p>
+            <p className="card-value">
               {w.humidity != null ? `${Math.round(w.humidity)}%` : '—'}
             </p>
           </div>
-          <div className="glass-card">
-            <p className="glass-card-label">UV Index</p>
-            <p className="glass-card-value">
+          <div className="data-card">
+            <p className="card-label">UV Index</p>
+            <p className="card-value">
               {w.uv_index != null ? w.uv_index : '—'}
             </p>
-            <p className="glass-card-sub">{getUvLabel(w.uv_index)}</p>
+            <p className="card-sub" style={{ color: getUvLabelColor(w.uv_index) }}>
+              {getUvLabel(w.uv_index)}
+            </p>
           </div>
-          <div className="glass-card">
-            <p className="glass-card-label">Rain Chance</p>
-            <p className="glass-card-value">
+          <div className="data-card">
+            <p className="card-label">Rain Chance</p>
+            <p className="card-value">
               {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
             </p>
           </div>
-          <div className="glass-card">
-            <p className="glass-card-label">Sunset</p>
-            <p className="glass-card-value">8:14 PM</p>
+          <div className="data-card">
+            <p className="card-label">Wind Gusts</p>
+            <p className="card-value">{gustMph} mph</p>
           </div>
-          <div className="glass-card">
-            <p className="glass-card-label">Wind Gusts</p>
-            <p className="glass-card-value">{gustMph} mph</p>
+          <div className="data-card">
+            <p className="card-label">Sunset</p>
+            <p className="card-value">8:14 PM</p>
           </div>
         </div>
-
-        <div className="forecast-cards">
+        <div className="card-row">
           {(hourly?.time || []).slice(0, 4).map((t, i) => {
             const precip = hourly.precip_probability?.[i]
+            const rainHigh = precip != null && precip > 30
             return (
-              <div key={i} className="glass-card forecast-slot">
-                <p className="glass-card-label">{formatHourLabel(t)}</p>
-                <p className="hour-temp overlay-text">
+              <div key={i} className="data-card forecast-card">
+                <p className="card-label">{formatHourLabel(t)}</p>
+                <p className="card-value">
                   {hourly.temperature?.[i] != null
                     ? `${Math.round(hourly.temperature[i])}°`
                     : '—'}
                 </p>
-                <p className="forecast-precip overlay-text">
-                  {precip != null && precip > 0 && (
-                    <span aria-hidden="true">💧</span>
-                  )}
+                <p
+                  className={`card-sub type-tertiary${rainHigh ? ' forecast-rain-high' : ''}`}
+                >
                   {precip != null ? `${Math.round(precip)}%` : '—'}
                 </p>
               </div>
@@ -919,29 +862,26 @@ export default function Player() {
         </div>
       </div>
 
-      <div
-        className="message-bar"
-        style={{ backgroundColor: MESSAGE_BAR_BG }}
-      >
-        <div className="message-body">
+      {/* ZONE 4 — MESSAGE BAR */}
+      <footer className="zone-message readable">
+        <img className="msg-logo" src={LOGO_URL} alt="" aria-hidden="true" />
+        <div className="msg-body">
           {MESSAGES.map((msg, i) => (
             <p
               key={i}
-              className={`message-text overlay-text${i === messageIndex ? ' active' : ''}`}
+              className={`msg-text readable${i === messageIndex ? ' active' : ''}`}
             >
               {msg}
             </p>
           ))}
         </div>
-        <div className="message-dots" aria-hidden="true">
-          {MESSAGES.map((_, i) => (
-            <span
-              key={i}
-              className={`message-dot${i === messageIndex ? ' active' : ''}`}
-            />
-          ))}
-        </div>
-      </div>
+        <img
+          className="msg-logo msg-logo-mirror"
+          src={LOGO_URL}
+          alt=""
+          aria-hidden="true"
+        />
+      </footer>
     </div>
   )
 }
