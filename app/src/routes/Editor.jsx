@@ -8,7 +8,7 @@ const defaultConfig = { units: 'fahrenheit', message: '' }
 export default function Editor() {
   const [config, setConfig] = useState(defaultConfig)
   const configRef = useRef(config)
-  const [context, setContext] = useState(null)
+  const [, setContext] = useState(null)
   const [initialized, setInitialized] = useState(false)
 
   configRef.current = config
@@ -32,6 +32,9 @@ export default function Editor() {
           })
           setContext(currentContext)
           setInitialized(true)
+
+
+
 
           // Register callback so ScreenCloud can ask for the latest config on save
           sc.onRequestConfigUpdate(() => {
