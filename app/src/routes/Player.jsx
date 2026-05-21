@@ -595,6 +595,7 @@ export default function Player() {
           height: 100%;
           flex-shrink: 0;
           overflow: hidden;
+          isolation: isolate;
         }
 
         .panel-left-fx {
@@ -642,37 +643,42 @@ export default function Player() {
 
         .panel-left-gradient-top {
           top: 0;
-          height: 45%;
+          height: 35%;
           background: linear-gradient(
             180deg,
-            rgba(0, 0, 0, 0.65) 0%,
-            transparent 35%
+            rgba(0, 0, 0, 0.55) 0%,
+            transparent 30%
           );
         }
 
         .panel-left-gradient-bottom {
           bottom: 0;
-          height: 50%;
+          height: 45%;
           background: linear-gradient(
             0deg,
-            rgba(0, 0, 0, 0.75) 0%,
-            transparent 40%
+            rgba(0, 0, 0, 0.7) 0%,
+            transparent 45%
           );
         }
 
         .panel-left-content {
           position: relative;
           z-index: 4;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
           height: 100%;
           pointer-events: none;
         }
 
+        .panel-left-content p,
+        .panel-left-content h1 {
+          text-shadow:
+            0 2px 12px rgba(0, 0, 0, 1),
+            0 4px 24px rgba(0, 0, 0, 0.9);
+        }
+
         .panel-left-top {
+          position: relative;
+          z-index: 1;
           padding: clamp(12px, 1.8vh, 20px) clamp(14px, 2vw, 22px);
-          flex-shrink: 0;
         }
 
         .panel-logo {
@@ -691,17 +697,17 @@ export default function Player() {
           font-weight: 400;
           color: rgba(255, 255, 255, 0.52);
           letter-spacing: 0.3px;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
         .panel-left-hero {
-          flex: 1;
+          position: absolute;
+          top: 38%;
+          left: 0;
+          right: 0;
+          transform: translateY(-50%);
           display: flex;
           flex-direction: column;
-          justify-content: center;
           padding: 0 8% 0 clamp(14px, 2vw, 22px);
-          min-height: 0;
-          overflow: hidden;
         }
 
         .hero-eyebrow {
@@ -711,17 +717,18 @@ export default function Player() {
           color: rgba(255, 255, 255, 0.6);
           letter-spacing: clamp(3px, 0.5vw, 5px);
           text-transform: uppercase;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
         .hero-title {
           margin: 0;
           font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(28px, 5vw, 56px);
+          font-size: clamp(24px, 4.5vw, 52px);
           font-weight: 700;
           color: #ffffff;
           line-height: 1.05;
-          text-shadow: 0 4px 30px rgba(0, 0, 0, 0.8);
+          text-shadow:
+            0 2px 16px rgba(0, 0, 0, 1),
+            0 0 40px rgba(0, 0, 0, 0.9);
         }
 
         .hero-tagline {
@@ -731,12 +738,15 @@ export default function Player() {
           font-size: clamp(13px, 1.6vw, 19px);
           font-weight: 400;
           color: rgba(255, 255, 255, 0.72);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
         .panel-left-bottom {
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          right: 0;
           padding: clamp(10px, 1.5vh, 16px) clamp(14px, 2vw, 22px);
-          flex-shrink: 0;
+          padding-bottom: clamp(16px, 2vh, 24px);
         }
 
         .announce-label {
@@ -746,12 +756,11 @@ export default function Player() {
           color: rgba(255, 255, 255, 0.5);
           letter-spacing: clamp(1px, 0.2vw, 2px);
           text-transform: uppercase;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
         .announce-body {
           position: relative;
-          min-height: 2.4em;
+          min-height: clamp(2.8em, 4vh, 3.6em);
         }
 
         .announce-text {
@@ -759,10 +768,10 @@ export default function Player() {
           inset: 0;
           margin: 0;
           font-size: clamp(13px, 1.6vw, 18px);
-          font-weight: 300;
-          color: rgba(255, 255, 255, 0.94);
+          font-weight: 400;
+          color: #ffffff;
           line-height: 1.4;
-          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.92);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 1);
           opacity: 0;
           transition: opacity 0.65s ease;
         }
@@ -789,16 +798,25 @@ export default function Player() {
           background: rgba(255, 255, 255, 0.78);
         }
 
+        .panel-divider {
+          width: 1px;
+          flex-shrink: 0;
+          background: rgba(255, 255, 255, 0.12);
+        }
+
         .panel-right {
+          position: relative;
           width: 32%;
           height: 100%;
           flex-shrink: 0;
-          background: rgba(0, 0, 0, 0.55);
+          background: rgba(0, 0, 0, 0.6);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           display: flex;
           flex-direction: column;
           overflow: hidden;
+          isolation: isolate;
+          box-shadow: -12px 0 32px rgba(0, 0, 0, 0.85);
         }
 
         .panel-section {
@@ -1215,6 +1233,8 @@ export default function Player() {
             </div>
           </div>
         </div>
+
+        <div className="panel-divider" aria-hidden="true" />
 
         <div className="panel-right">
           <section className="panel-section">
