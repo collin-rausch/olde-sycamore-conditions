@@ -62,19 +62,33 @@ function formatGreensSpeed(val) {
   return `${rounded} ft`
 }
 
+function normalizeCourseStatusKey(status) {
+  const s = (status || 'open').toLowerCase().replace(/-/g, ' ').trim()
+  if (s === 'closed') return 'closed'
+  if (s.includes('frost')) return 'frost'
+  return 'open'
+}
+
+function getStatusBadgeLabel(status) {
+  const key = normalizeCourseStatusKey(status)
+  if (key === 'closed') return 'CLOSED'
+  if (key === 'frost') return 'FROST DELAY'
+  return 'OPEN'
+}
+
 function getStatusBadgeStyle(status) {
-  const s = (status || 'Open').toLowerCase()
-  if (s === 'closed') {
+  const key = normalizeCourseStatusKey(status)
+  if (key === 'closed') {
     return {
-      background: 'rgba(127,29,29,0.80)',
-      border: '0.5px solid rgba(248,113,113,0.30)',
+      background: 'rgba(127,29,29,0.60)',
+      border: '0.5px solid rgba(248,113,113,0.4)',
       color: '#f87171',
     }
   }
-  if (s.includes('frost')) {
+  if (key === 'frost') {
     return {
       background: 'rgba(59,130,246,0.25)',
-      border: '0.5px solid rgba(96,165,250,0.30)',
+      border: '0.5px solid rgba(96,165,250,0.4)',
       color: '#93c5fd',
     }
   }
@@ -181,7 +195,7 @@ function formatHourCompact(isoOrTime) {
     else return s
   }
   const hour12 = h % 12 === 0 ? 12 : h % 12
-  const suffix = h >= 12 ? 'P' : 'A'
+  const suffix = h >= 12 ? 'PM' : 'AM'
   return `${hour12}${suffix}`
 }
 
@@ -639,10 +653,9 @@ export default function Player() {
     ]
   }, [courseStatus])
 
-  const statusBadgeLabel = (
-    courseStatus?.course_status || 'Open'
-  ).toUpperCase()
+  const statusBadgeLabel = getStatusBadgeLabel(courseStatus?.course_status)
   const statusBadgeStyle = getStatusBadgeStyle(courseStatus?.course_status)
+  const dailyNote = courseStatus?.daily_note?.trim() || ''
 
   return (
     <div className="player-root">
@@ -773,7 +786,7 @@ export default function Player() {
 
         .panel-logo {
           display: block;
-          height: clamp(30px, 4.5vw, 52px);
+          height: clamp(44px, 6.5vw, 76px);
           width: auto;
           object-fit: contain;
           object-position: left center;
@@ -791,20 +804,22 @@ export default function Player() {
 
         .panel-left-hero {
           position: absolute;
-          top: 38%;
+          top: 50%;
           left: 0;
           right: 0;
           transform: translateY(-50%);
           display: flex;
           flex-direction: column;
-          padding: 0 8% 0 clamp(14px, 2vw, 22px);
+          align-items: center;
+          text-align: center;
+          padding: 0 clamp(14px, 2vw, 22px);
         }
 
         .hero-eyebrow {
           margin: 0 0 clamp(6px, 0.8vh, 10px);
           font-size: clamp(10px, 1.1vw, 13px);
-          font-weight: 300;
-          color: rgba(255, 255, 255, 0.6);
+          font-weight: 700;
+          color: rgba(255, 255, 255, 0.85);
           letter-spacing: clamp(3px, 0.5vw, 5px);
           text-transform: uppercase;
         }
@@ -813,7 +828,7 @@ export default function Player() {
           margin: 0;
           font-family: Georgia, 'Times New Roman', serif;
           font-size: clamp(24px, 4.5vw, 52px);
-          font-weight: 700;
+          font-weight: 800;
           color: #ffffff;
           line-height: 1.05;
           text-shadow:
@@ -840,27 +855,32 @@ export default function Player() {
         }
 
         .announce-label {
-          margin: 0 0 clamp(4px, 0.6vh, 5px);
-          font-size: clamp(8px, 0.9vw, 9px);
+          margin: 0 0 clamp(8px, 1vh, 12px);
+          font-size: clamp(9px, 1vw, 11px);
           font-weight: 500;
-          color: rgba(255, 255, 255, 0.5);
-          letter-spacing: clamp(1px, 0.2vw, 2px);
+          color: rgba(255, 255, 255, 0.55);
+          letter-spacing: clamp(2px, 0.3vw, 3px);
           text-transform: uppercase;
+          text-align: center;
+          width: 100%;
         }
 
         .announce-body {
           position: relative;
-          min-height: clamp(2.8em, 4vh, 3.6em);
+          width: 100%;
+          max-width: 92%;
+          min-height: clamp(4.2em, 7vh, 6em);
         }
 
         .announce-text {
           position: absolute;
           inset: 0;
           margin: 0;
-          font-size: clamp(13px, 1.6vw, 18px);
+          font-size: clamp(22px, 3.2vw, 36px);
           font-weight: 400;
           color: #ffffff;
-          line-height: 1.4;
+          line-height: 1.35;
+          text-align: center;
           text-shadow: 0 1px 8px rgba(0, 0, 0, 1);
           opacity: 0;
           transition: opacity 0.65s ease;
@@ -868,24 +888,6 @@ export default function Player() {
 
         .announce-text.active {
           opacity: 1;
-        }
-
-        .announce-dots {
-          display: flex;
-          gap: clamp(4px, 0.5vw, 6px);
-          margin-top: clamp(6px, 0.8vh, 8px);
-        }
-
-        .announce-dot {
-          width: clamp(3px, 0.4vw, 4px);
-          height: clamp(3px, 0.4vw, 4px);
-          border-radius: 50%;
-          background: rgba(255, 255, 255, 0.2);
-          transition: background 0.3s ease;
-        }
-
-        .announce-dot.active {
-          background: rgba(255, 255, 255, 0.78);
         }
 
         .panel-divider {
@@ -899,14 +901,13 @@ export default function Player() {
           width: 32%;
           height: 100%;
           flex-shrink: 0;
-          background: rgba(0, 0, 0, 0.6);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          background: rgba(255, 255, 255, 0.06);
+          backdrop-filter: blur(10px);
+          -webkit-backdrop-filter: blur(10px);
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          isolation: isolate;
-          box-shadow: -12px 0 32px rgba(0, 0, 0, 0.85);
+          box-shadow: none;
         }
 
         .panel-section {
@@ -966,12 +967,25 @@ export default function Player() {
         }
 
         .weather-hero-row {
+          display: flex;
+          align-items: center;
+          gap: clamp(12px, 1.6vw, 20px);
           margin-bottom: clamp(6px, 0.8vh, 8px);
+        }
+
+        .weather-clock-col {
+          flex-shrink: 0;
+          padding-top: clamp(2px, 0.3vh, 4px);
+        }
+
+        .weather-temp-col {
+          flex: 1;
+          min-width: 0;
         }
 
         .weather-temp {
           margin: 0;
-          font-size: clamp(32px, 4.5vw, 52px);
+          font-size: clamp(28px, 3.6vw, 42px);
           font-weight: 200;
           line-height: 1;
           color: #ffffff;
@@ -1199,6 +1213,29 @@ export default function Player() {
           border-bottom: none;
         }
 
+        .daily-note-block {
+          background: rgba(251, 191, 36, 0.08);
+          border: 0.5px solid rgba(251, 191, 36, 0.20);
+          border-radius: 6px;
+          padding: 8px 10px;
+          margin-bottom: 8px;
+        }
+
+        .daily-note-label {
+          display: block;
+          font-size: 9px;
+          letter-spacing: 1px;
+          color: rgba(251, 191, 36, 0.70);
+          margin-bottom: 4px;
+        }
+
+        .daily-note-text {
+          margin: 0;
+          font-size: clamp(11px, 1.2vw, 13px);
+          color: rgba(255, 255, 255, 0.90);
+          line-height: 1.4;
+        }
+
         .tip-icon {
           font-size: clamp(11px, 1.2vw, 13px);
           color: rgba(255, 255, 255, 0.5);
@@ -1216,29 +1253,24 @@ export default function Player() {
           text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
         }
 
-        .panel-clock {
-          flex-shrink: 0;
-          border-top: 0.5px solid rgba(255, 255, 255, 0.08);
-          padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.4vw, 16px);
-          text-align: center;
-        }
-
         .clock-time {
           margin: 0;
-          font-size: clamp(18px, 2.5vw, 32px);
+          font-size: clamp(28px, 3.6vw, 42px);
           font-weight: 200;
           color: #ffffff;
           letter-spacing: clamp(0.5px, 0.1vw, 1px);
           font-variant-numeric: tabular-nums;
           text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          white-space: nowrap;
         }
 
         .clock-date {
-          margin: clamp(2px, 0.3vh, 2px) 0 0;
-          font-size: clamp(9px, 1vw, 12px);
+          margin: clamp(2px, 0.3vh, 4px) 0 0;
+          font-size: clamp(8px, 0.95vw, 11px);
           font-weight: 400;
           color: rgba(255, 255, 255, 0.5);
           text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          white-space: nowrap;
         }
 
         .player-error {
@@ -1293,14 +1325,6 @@ export default function Player() {
             </div>
 
             <div className="panel-left-hero">
-              <p className="hero-eyebrow">Welcome to</p>
-              <h1 className="hero-title">Olde Sycamore Golf Club</h1>
-              <p className="hero-tagline">
-                Experience. Tradition. Community.
-              </p>
-            </div>
-
-            <div className="panel-left-bottom">
               <p className="announce-label">Club Announcements</p>
               <div className="announce-body">
                 {ANNOUNCEMENTS.map((msg, i) => (
@@ -1312,14 +1336,14 @@ export default function Player() {
                   </p>
                 ))}
               </div>
-              <div className="announce-dots">
-                {ANNOUNCEMENTS.map((_, i) => (
-                  <span
-                    key={i}
-                    className={`announce-dot${i === messageIndex ? ' active' : ''}`}
-                  />
-                ))}
-              </div>
+            </div>
+
+            <div className="panel-left-bottom">
+              <p className="hero-eyebrow">Welcome to</p>
+              <h1 className="hero-title">Olde Sycamore Golf Club</h1>
+              <p className="hero-tagline">
+                Experience. Tradition. Community.
+              </p>
             </div>
           </div>
         </div>
@@ -1337,11 +1361,17 @@ export default function Player() {
             </div>
 
             <div className="weather-hero-row">
-              <p className="weather-temp">{tempDisplay}°</p>
-              <p className="weather-condition">
-                {weather?.condition_text || '—'}
-              </p>
-              <p className="weather-feels">Feels like {feelsDisplay}°</p>
+              <div className="weather-clock-col">
+                <p className="clock-time">{clockStr}</p>
+                <p className="clock-date">{dateStr}</p>
+              </div>
+              <div className="weather-temp-col">
+                <p className="weather-temp">{tempDisplay}°</p>
+                <p className="weather-condition">
+                  {weather?.condition_text || '—'}
+                </p>
+                <p className="weather-feels">Feels like {feelsDisplay}°</p>
+              </div>
             </div>
 
             <div className="detail-row">
@@ -1463,6 +1493,12 @@ export default function Player() {
           <section className="panel-section-tips">
             <span className="section-label">Golfer Tips</span>
             <div className="tips-list">
+              {dailyNote ? (
+                <div className="daily-note-block">
+                  <span className="daily-note-label">NOTE</span>
+                  <p className="daily-note-text">{dailyNote}</p>
+                </div>
+              ) : null}
               {golferTips.map((tip, i) => (
                 <div key={i} className="tip-row">
                   <TablerIcon name={tip.icon} />
@@ -1471,11 +1507,6 @@ export default function Player() {
               ))}
             </div>
           </section>
-
-          <div className="panel-clock">
-            <p className="clock-time">{clockStr}</p>
-            <p className="clock-date">{dateStr}</p>
-          </div>
         </div>
       </div>
     </div>
