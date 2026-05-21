@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useRef } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { connectScreenCloud, getScreenCloud } from '@screencloud/apps-sdk'
+import { createVisualStateStore, getVisualState } from '../lib/weatherVisuals'
 
 const DEFAULT_WEATHER = {
   temperature_f: 72,
@@ -23,8 +24,7 @@ const DEFAULT_WEATHER = {
   },
 }
 
-const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99])
-const OVERCAST_CODES = new Set([3, 45, 48])
+const visualStore = createVisualStateStore()
 
 function parseHourlyForecast(hf) {
   if (!hf) return DEFAULT_WEATHER.hourly_forecast
@@ -36,64 +36,6 @@ function parseHourlyForecast(hf) {
     }
   }
   return hf
-}
-
-function isGoldenHour(date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: false,
-  }).formatToParts(date)
-  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 12)
-  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0)
-  const mins = hour * 60 + minute
-  const morning = mins >= 360 && mins <= 450
-  const evening = mins >= 1050 && mins <= 1170
-  return morning || evening
-}
-
-function isRainWeather(code, precip) {
-  return RAIN_CODES.has(code) || (precip != null && precip > 40)
-}
-
-function getSkyGradient(isDay, weatherCode, precip) {
-  if (isRainWeather(weatherCode, precip)) {
-    return 'linear-gradient(180deg, #4a4a4a 0%, #2d2d2d 100%)'
-  }
-  if (OVERCAST_CODES.has(weatherCode)) {
-    return 'linear-gradient(180deg, #8b9aab 0%, #6b7a8d 100%)'
-  }
-  if (isDay === 0) {
-    return 'linear-gradient(180deg, #0a1628 0%, #1a2744 100%)'
-  }
-  if (isGoldenHour(new Date())) {
-    return 'linear-gradient(180deg, #f4a261 0%, #e76f51 50%, #d4a574 100%)'
-  }
-  return 'linear-gradient(180deg, #4a90d9 0%, #87ceeb 100%)'
-}
-
-function getHourET(date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York',
-    hour: 'numeric',
-    hour12: false,
-  }).formatToParts(date)
-  return Number(parts.find((p) => p.type === 'hour')?.value ?? 12)
-}
-
-function getWeatherTintOverlay(isDay, weatherCode, precip, date) {
-  if (isDay === 0) return 'rgba(5, 10, 30, 0.62)'
-  if (weatherCode >= 95 && weatherCode <= 99) return 'rgba(10, 15, 25, 0.6)'
-  if ((weatherCode >= 51 && weatherCode <= 82) || (precip != null && precip > 40)) {
-    return 'rgba(20, 40, 60, 0.48)'
-  }
-  if (weatherCode >= 45 && weatherCode <= 48) return 'rgba(80, 90, 100, 0.38)'
-  if (weatherCode === 3) return 'rgba(60, 70, 80, 0.25)'
-  const hour = getHourET(date)
-  if (hour >= 17 && hour <= 20) return 'rgba(160, 70, 10, 0.2)'
-  if (weatherCode >= 0 && weatherCode <= 2) return 'rgba(0, 0, 0, 0.12)'
-  return 'rgba(0, 0, 0, 0.12)'
 }
 
 const BACKGROUND_IMAGE_URL =
@@ -122,15 +64,10 @@ function formatHourLabel(isoOrTime) {
   })
 }
 
-function CloudShape({ x, y, scale, opacity }) {
-  return (
-    <g transform={`translate(${x}, ${y}) scale(${scale})`} opacity={opacity}>
-      <ellipse cx="40" cy="30" rx="35" ry="22" fill="#f0f4f8" />
-      <ellipse cx="70" cy="28" rx="28" ry="20" fill="#f0f4f8" />
-      <ellipse cx="95" cy="32" rx="32" ry="18" fill="#f0f4f8" />
-      <ellipse cx="55" cy="22" rx="25" ry="16" fill="#ffffff" />
-    </g>
-  )
+/** Map flagIntensity 0–1 → animation duration 8s (calm) to 0.8s (windy). */
+function flagSwayDuration(intensity) {
+  const t = Math.min(1, Math.max(0, intensity ?? 0))
+  return `${8 - t * 7.2}s`
 }
 
 export default function Player() {
@@ -138,6 +75,8 @@ export default function Player() {
   const [error, setError] = useState(null)
   const [started, setStarted] = useState(false)
   const [clock, setClock] = useState(() => new Date())
+  const [, setFrame] = useState(0)
+  const hasResetVisuals = useRef(false)
 
   useEffect(() => {
     let subscribed = true
@@ -208,22 +147,35 @@ export default function Player() {
     return () => clearInterval(tick)
   }, [])
 
+  useEffect(() => {
+    if (!started) return
+
+    let rafId
+
+    const tick = () => {
+      const data = weather ?? DEFAULT_WEATHER
+      if (!hasResetVisuals.current) {
+        visualStore.reset(data)
+        hasResetVisuals.current = true
+      } else {
+        visualStore.update(data)
+      }
+      setFrame((n) => n + 1)
+      rafId = requestAnimationFrame(tick)
+    }
+
+    rafId = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(rafId)
+  }, [started, weather])
+
   const w = weather || DEFAULT_WEATHER
   const hourly = useMemo(() => parseHourlyForecast(w.hourly_forecast), [w.hourly_forecast])
 
-  const isDay = w.is_day ?? 1
-  const weatherCode = w.weather_code ?? 0
-  const cloudCover = w.cloud_cover ?? 0
   const precipProb = w.precip_probability ?? 0
   const windSpeed = w.wind_speed_mph ?? 0
   const windDir = w.wind_direction ?? 0
-  const showRain = precipProb > 40
 
-  const weatherTint = getWeatherTintOverlay(isDay, weatherCode, precipProb, clock)
-  const showRainLayer =
-    showRain ||
-    (weatherCode >= 51 && weatherCode <= 82) ||
-    RAIN_CODES.has(weatherCode)
+  const visual = visualStore.current ?? getVisualState(w)
 
   const clockStr = clock.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -256,22 +208,65 @@ export default function Player() {
           height: 100%;
           object-fit: cover;
           object-position: center 60%;
+          transition: filter 2.5s ease;
         }
 
-        .weather-tint {
+        .weather-tint,
+        .ambient-tint,
+        .scene-vignette {
           position: absolute;
           inset: 0;
-          z-index: 2;
           pointer-events: none;
-          transition: background-color 2s ease;
+          transition: background-color 2.5s ease, opacity 2.5s ease;
         }
+
+        .weather-tint { z-index: 2; }
+        .ambient-tint { z-index: 3; }
+        .scene-vignette { z-index: 4; }
 
         .scene-rain {
           position: absolute;
           inset: 0;
-          z-index: 3;
+          z-index: 5;
           pointer-events: none;
           overflow: hidden;
+        }
+
+        .scene-flag {
+          position: absolute;
+          bottom: 28%;
+          left: 58%;
+          z-index: 6;
+          width: 28px;
+          height: 36px;
+          pointer-events: none;
+          transform-origin: bottom center;
+        }
+
+        .scene-flag-pole {
+          position: absolute;
+          bottom: 0;
+          left: 50%;
+          width: 2px;
+          height: 100%;
+          margin-left: -1px;
+          background: rgba(255, 255, 255, 0.85);
+        }
+
+        .scene-flag-cloth {
+          position: absolute;
+          top: 2px;
+          left: 50%;
+          width: 18px;
+          height: 12px;
+          background: #c41e3a;
+          transform-origin: left center;
+          animation: flag-sway ease-in-out infinite;
+        }
+
+        @keyframes flag-sway {
+          0%, 100% { transform: skewY(0deg) scaleX(1); }
+          50% { transform: skewY(5deg) scaleX(0.9); }
         }
 
         .rain-drop {
@@ -283,20 +278,19 @@ export default function Player() {
             rgba(200, 215, 235, 0.15) 40%,
             rgba(200, 215, 235, 0.45) 100%
           );
-          transform: rotate(12deg);
           animation: rain-fall linear infinite;
         }
 
         @keyframes rain-fall {
           0% {
-            transform: translateY(-30px) rotate(12deg);
+            transform: translateY(-30px) rotate(var(--rain-angle, 12deg));
             opacity: 0;
           }
           8% {
             opacity: 1;
           }
           100% {
-            transform: translateY(105vh) rotate(12deg);
+            transform: translateY(105vh) rotate(var(--rain-angle, 12deg));
             opacity: 0;
           }
         }
@@ -536,32 +530,71 @@ export default function Player() {
         className="scene-background"
         src={BACKGROUND_IMAGE_URL}
         alt="Olde Sycamore Golf Club"
+        style={{
+          filter: `brightness(${visual.sceneExposure}) contrast(${visual.sceneContrast}) saturate(${visual.sceneSaturation})`,
+        }}
       />
 
-      {/* 2. Weather tint overlay */}
+      {/* 2. Sky tint overlay */}
       <div
         className="weather-tint"
-        style={{ backgroundColor: weatherTint }}
+        style={{
+          backgroundColor: visual.skyTintColor,
+          opacity: visual.skyTintOpacity,
+        }}
       />
 
-      {/* 3. Rain animation layer */}
-      {showRainLayer && (
+      {/* 3. Ambient color temperature */}
+      <div
+        className="ambient-tint"
+        style={{ backgroundColor: visual.ambientTintColor }}
+      />
+
+      {/* 4. Vignette */}
+      <div
+        className="scene-vignette"
+        style={{
+          background: `radial-gradient(ellipse at center, transparent 42%, rgba(0, 0, 0, ${visual.vignetteOpacity}) 100%)`,
+        }}
+      />
+
+      {/* 5. Rain animation layer */}
+      {visual.showRain && (
         <div className="scene-rain">
-          {Array.from({ length: 60 }, (_, i) => (
-            <div
-              key={i}
-              className="rain-drop"
-              style={{
-                left: `${(i * 13.7 + (i % 5) * 3) % 100}%`,
-                height: `${10 + (i % 6) * 3}px`,
-                opacity: 0.2 + (i % 5) * 0.08,
-                animationDuration: `${0.55 + (i % 8) * 0.12}s`,
-                animationDelay: `${(i % 18) * 0.06}s`,
-              }}
-            />
-          ))}
+          {Array.from(
+            { length: Math.round(18 + visual.rainDensity * 42) },
+            (_, i) => (
+              <div
+                key={i}
+                className="rain-drop"
+                style={{
+                  left: `${(i * 13.7 + (i % 5) * 3) % 100}%`,
+                  height: `${8 + visual.rainDensity * 14 + (i % 4) * 2}px`,
+                  opacity:
+                    visual.rainOpacity *
+                    (0.35 + visual.rainDensity * 0.4) *
+                    (0.85 + (i % 3) * 0.05),
+                  animationDuration: `${(1.1 - visual.rainDensity * 0.5) + (i % 8) * 0.1}s`,
+                  animationDelay: `${(i % 18) * 0.06}s`,
+                  '--rain-angle': `${12 + visual.rainAngle * 0.4}deg`,
+                }}
+              />
+            ),
+          )}
         </div>
       )}
+
+      {/* Flag sway driven by wind */}
+      <div
+        className="scene-flag"
+        aria-hidden="true"
+      >
+        <div className="scene-flag-pole" />
+        <div
+          className="scene-flag-cloth"
+          style={{ animationDuration: flagSwayDuration(visual.flagIntensity) }}
+        />
+      </div>
 
       {/* Data overlays */}
       <header className="overlay-header">
