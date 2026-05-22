@@ -7,7 +7,6 @@ import {
   getEasternHour,
   getWindCardinal,
 } from '../lib/weatherVisuals'
-import WeatherCanvas from '../components/canvas/WeatherCanvas'
 
 const DEFAULT_WEATHER = {
   temperature_f: 72,
@@ -40,26 +39,40 @@ const ANNOUNCEMENTS = [
   'Practice facility open 7 AM–7 PM · Driving range, chipping green & putting green',
 ]
 
-const TEE_TIMES = [
-  { time: '9:40 AM', status: '2 SPOTS', tone: 'green' },
-  { time: '10:20 AM', status: '4 SPOTS', tone: 'green' },
-  { time: '11:00 AM', status: 'WAITLIST', tone: 'yellow' },
-  { time: '1:40 PM', status: '2 SPOTS', tone: 'green' },
-  { time: '3:10 PM', status: 'OPEN', tone: 'muted' },
-]
-
 const DEFAULT_COURSE_STATS = [
-  { label: 'Greens speed', value: '11.2 ft' },
+  { label: 'Greens', value: '11.2 ft' },
   { label: 'Fairways', value: 'Firm' },
   { label: 'Bunkers', value: 'Groomed' },
-  { label: 'Cart rule', value: '90° Rule' },
+  { label: 'Cart', value: '90° Rule' },
 ]
+
+const RAIN_DROPS = Array.from({ length: 60 }, (_, i) => ({
+  id: i,
+  left: `${((i * 17 + (i % 7) * 11) % 100).toFixed(1)}%`,
+  delay: `${((i * 0.13) % 2).toFixed(2)}s`,
+  duration: `${(0.6 + (i % 5) * 0.15).toFixed(2)}s`,
+}))
 
 function formatGreensSpeed(val) {
   const n = Number(val)
   if (!Number.isFinite(n)) return '—'
   const rounded = Math.round(n * 10) / 10
   return `${rounded} ft`
+}
+
+function capitalizeFirst(str) {
+  if (!str) return '—'
+  const s = String(str).trim()
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+}
+
+function formatCartRule(rule) {
+  if (!rule) return '—'
+  const s = rule.toLowerCase()
+  if (s.includes('path')) return 'Paths Only'
+  if (s.includes('90')) return '90° Rule'
+  if (s.includes('fairway')) return 'Fairways Open'
+  return rule
 }
 
 function normalizeCourseStatusKey(status) {
@@ -80,27 +93,24 @@ function getStatusBadgeStyle(status) {
   const key = normalizeCourseStatusKey(status)
   if (key === 'closed') {
     return {
-      background: 'rgba(127,29,29,0.60)',
-      border: '0.5px solid rgba(248,113,113,0.4)',
+      background: 'rgba(127,29,29,0.75)',
+      border: '0.5px solid rgba(248,113,113,0.50)',
       color: '#f87171',
     }
   }
   if (key === 'frost') {
     return {
-      background: 'rgba(59,130,246,0.25)',
-      border: '0.5px solid rgba(96,165,250,0.4)',
+      background: 'rgba(29,78,216,0.60)',
+      border: '0.5px solid rgba(147,197,253,0.50)',
       color: '#93c5fd',
     }
   }
   return {
-    background: 'rgba(16,68,36,0.80)',
-    border: '0.5px solid rgba(74,222,128,0.30)',
+    background: 'rgba(16,68,36,0.75)',
+    border: '0.5px solid rgba(74,222,128,0.50)',
     color: '#4ade80',
   }
 }
-
-const TABLER_ICONS_URL =
-  'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css'
 
 function toNum(val) {
   if (val == null || val === '') return null
@@ -138,93 +148,6 @@ function formatSunTime(isoString) {
   })
 }
 
-function parseHourlyForecast(hf) {
-  if (!hf) return null
-  if (typeof hf === 'string') {
-    try {
-      return JSON.parse(hf)
-    } catch {
-      return null
-    }
-  }
-  return hf
-}
-
-function formatUpdatedAt(fetchedAt) {
-  if (!fetchedAt) return 'Updated just now'
-  const fetched = new Date(fetchedAt)
-  if (Number.isNaN(fetched.getTime())) return 'Updated just now'
-  const mins = Math.floor((Date.now() - fetched.getTime()) / 60000)
-  if (mins < 2) return 'Updated just now'
-  if (mins < 60) return `Updated ${mins} min ago`
-  return `Updated ${fetched.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/New_York',
-  })}`
-}
-
-function parseSlotHour(isoOrTime) {
-  const s = String(isoOrTime)
-  if (s.includes('T')) {
-    return getEasternHour(new Date(s))
-  }
-  const match = s.match(/^(\d{1,2}):/)
-  return match ? parseInt(match[1], 10) : 0
-}
-
-function formatHourCompact(isoOrTime) {
-  if (!isoOrTime) return '—'
-  const s = String(isoOrTime)
-  let h = 0
-  if (s.includes('T')) {
-    const d = new Date(s)
-    if (!isNaN(d.getTime())) {
-      h = parseInt(
-        d.toLocaleTimeString('en-US', {
-          hour: 'numeric',
-          hour12: false,
-          timeZone: 'America/New_York',
-        }),
-        10,
-      )
-    }
-  } else {
-    const match = s.match(/^(\d{1,2}):/)
-    if (match) h = parseInt(match[1], 10)
-    else return s
-  }
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  const suffix = h >= 12 ? 'PM' : 'AM'
-  return `${hour12}${suffix}`
-}
-
-function getForecastSlots(hourly, referenceDate) {
-  const times = hourly?.time || []
-  if (times.length === 0) return []
-
-  const currentHour = getEasternHour(referenceDate)
-  let start = 0
-  for (let i = 0; i < times.length; i++) {
-    if (parseSlotHour(times[i]) >= currentHour) {
-      start = i
-      break
-    }
-  }
-
-  const slots = []
-  for (let j = 0; j < 6; j++) {
-    const i = start + j
-    if (i >= times.length) break
-    slots.push({
-      time: times[i],
-      temp: toNum(hourly.temperature?.[i]),
-      precip: toNum(hourly.precip_probability?.[i]),
-    })
-  }
-  return slots
-}
-
 function getUvLabel(uv) {
   if (uv == null) return '—'
   if (uv <= 2) return 'Low'
@@ -235,8 +158,8 @@ function getUvLabel(uv) {
 }
 
 function getUvLabelColor(uv) {
-  if (uv == null) return 'rgba(255, 255, 255, 0.65)'
-  if (uv <= 2) return 'rgba(255, 255, 255, 0.65)'
+  if (uv == null) return 'rgba(255, 255, 255, 0.70)'
+  if (uv <= 2) return 'rgba(255, 255, 255, 0.70)'
   if (uv <= 5) return '#fbbf24'
   if (uv <= 7) return '#f97316'
   if (uv <= 10) return '#ef4444'
@@ -247,6 +170,36 @@ function isRainStormCode(code) {
   if (code == null) return false
   if (code >= 95) return true
   return [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82].includes(code)
+}
+
+function getPhotoFilter(weather, easternHour) {
+  const code = weather?.weather_code ?? 0
+  const cloud = weather?.cloud_cover ?? 0
+  const precip = weather?.precip_probability ?? 0
+  const isDay = weather?.is_day === 1 || weather?.is_day === true
+
+  if (!isDay) {
+    return 'brightness(0.35) saturate(0.50) contrast(1.10)'
+  }
+  if (code >= 95) {
+    return 'brightness(0.70) saturate(0.60) contrast(1.05)'
+  }
+  if (precip > 40 || (code >= 51 && code <= 82)) {
+    return 'brightness(0.80) saturate(0.70) contrast(0.94)'
+  }
+  if (easternHour >= 17 && easternHour <= 20) {
+    return 'brightness(1.02) saturate(1.18) contrast(0.98) sepia(0.15)'
+  }
+  if ((code >= 45 && code <= 48) || cloud > 70) {
+    return 'brightness(0.88) saturate(0.78) contrast(0.96)'
+  }
+  if (code === 3) {
+    return 'brightness(0.96) saturate(0.92) contrast(1.0)'
+  }
+  if (code >= 0 && code <= 2) {
+    return 'brightness(1.05) saturate(1.08) contrast(1.02)'
+  }
+  return 'brightness(1.05) saturate(1.08) contrast(1.02)'
 }
 
 function getGolferTips(
@@ -396,8 +349,32 @@ function getGolferTips(
   return defaultTips
 }
 
-function TablerIcon({ name }) {
-  return <i className={`ti ti-${name}`} aria-hidden="true" />
+function getCenterTip({ weatherCode, windSpeed, uvIndex, precipProb }) {
+  const code = weatherCode ?? 0
+  const wind = windSpeed ?? 0
+  const uv = uvIndex ?? 0
+  const precip = precipProb ?? 0
+
+  if (code >= 95) {
+    return 'Course closed — thunderstorm. Return to clubhouse immediately.'
+  }
+  if (precip > 60 || isRainStormCode(code)) {
+    return 'Rain advisory in effect. Course open — bring waterproof gear.'
+  }
+  if (uv >= 8) {
+    return `UV index ${uv} (Very High). Apply SPF 50+ before your round.`
+  }
+  if (uv >= 6) {
+    return `UV index ${uv} (High). Sunscreen recommended.`
+  }
+  if (wind >= 15) {
+    return `Strong ${Math.round(wind)} mph wind. Club up 1-2 on approach shots.`
+  }
+  if (wind >= 8) {
+    return `${Math.round(wind)} mph wind. Factor into club selection on par 3s.`
+  }
+
+  return ''
 }
 
 export default function Player() {
@@ -409,16 +386,6 @@ export default function Player() {
   const [messageIndex, setMessageIndex] = useState(0)
   const [, setFrame] = useState(0)
   const hasResetVisuals = useRef(false)
-
-  useEffect(() => {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = TABLER_ICONS_URL
-    document.head.appendChild(link)
-    return () => {
-      if (link.parentNode) link.parentNode.removeChild(link)
-    }
-  }, [])
 
   useEffect(() => {
     let subscribed = true
@@ -566,96 +533,73 @@ export default function Player() {
   }, [started, weather])
 
   const visualWeather = weather ?? DEFAULT_WEATHER
-  const hourly = useMemo(
-    () => parseHourlyForecast(weather?.hourly_forecast),
-    [weather?.hourly_forecast],
-  )
-
   const precipProb = weather?.precip_probability ?? null
   const windSpeed = weather?.wind_speed_mph ?? null
   const windDir = weather?.wind_direction ?? null
-  const sunriseDisplay = formatSunTime(weather?.sunrise_at)
-  const sunsetDisplay = formatSunTime(weather?.sunset_at)
   const easternHour = getEasternHour(clock)
 
+  // Keep visual store active (RAF loop)
   const visual = visualStore.current ?? getVisualState(visualWeather)
+  void visual
 
-  const clockStr = clock.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: 'America/New_York',
-  })
+  const photoFilter = useMemo(
+    () => getPhotoFilter(visualWeather, easternHour),
+    [visualWeather, easternHour],
+  )
 
-  const dateStr = clock.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'America/New_York',
-  })
+  const showRain = (precipProb ?? 0) > 40
 
   const tempDisplay =
     weather?.temperature_f != null ? Math.round(weather.temperature_f) : '--'
   const feelsDisplay =
     weather?.feels_like_f != null ? Math.round(weather.feels_like_f) : '--'
-  const updatedLabel = formatUpdatedAt(weather?.fetched_at)
-
-  const forecastSlots = useMemo(() => {
-    if (!hourly) return []
-    return getForecastSlots(hourly, clock)
-  }, [hourly, clock])
-
-  const golferTips = useMemo(
-    () =>
-      getGolferTips(
-        weather?.weather_code,
-        windSpeed ?? 0,
-        weather?.uv_index,
-        precipProb ?? 0,
-        weather?.is_day,
-        easternHour,
-        sunriseDisplay,
-      ),
-    [
-      weather?.weather_code,
-      weather?.uv_index,
-      weather?.is_day,
-      windSpeed,
-      precipProb,
-      easternHour,
-      sunriseDisplay,
-    ],
-  )
 
   const windLabel =
     windSpeed != null
       ? `${getWindCardinal(windDir ?? 0)} ${Math.round(windSpeed)} mph`
       : '—'
 
-  const courseStatsCards = useMemo(() => {
+  const uvValue = weather?.uv_index
+  const uvLabelText =
+    uvValue != null ? `UV ${uvValue} · ${getUvLabel(uvValue)}` : 'UV —'
+  const uvColor = getUvLabelColor(uvValue)
+  const rainLabelText =
+    precipProb != null ? `${Math.round(precipProb)}% rain` : '— rain'
+
+  const conditionItems = useMemo(() => {
     if (!courseStatus) return DEFAULT_COURSE_STATS
     return [
-      {
-        label: 'Greens speed',
-        value: formatGreensSpeed(courseStatus.greens_speed),
-      },
+      { label: 'Greens', value: formatGreensSpeed(courseStatus.greens_speed) },
       {
         label: 'Fairways',
-        value: courseStatus.fairway_condition || '—',
+        value: capitalizeFirst(courseStatus.fairway_condition),
       },
       {
         label: 'Bunkers',
-        value: courseStatus.bunker_condition || '—',
+        value: capitalizeFirst(courseStatus.bunker_condition),
       },
-      {
-        label: 'Cart rule',
-        value: courseStatus.cart_rule || '—',
-      },
+      { label: 'Cart', value: formatCartRule(courseStatus.cart_rule) },
     ]
   }, [courseStatus])
 
   const statusBadgeLabel = getStatusBadgeLabel(courseStatus?.course_status)
   const statusBadgeStyle = getStatusBadgeStyle(courseStatus?.course_status)
+  const statusKey = normalizeCourseStatusKey(courseStatus?.course_status)
   const dailyNote = courseStatus?.daily_note?.trim() || ''
+
+  const centerTip = useMemo(
+    () =>
+      getCenterTip({
+        weatherCode: weather?.weather_code,
+        windSpeed: windSpeed ?? 0,
+        uvIndex: weather?.uv_index,
+        precipProb: precipProb ?? 0,
+      }),
+    [weather?.weather_code, weather?.uv_index, windSpeed, precipProb],
+  )
+
+  // Announcement rotation kept for useEffect; index unused in overlay UI
+  void messageIndex
 
   return (
     <div className="player-root">
@@ -681,276 +625,160 @@ export default function Player() {
           object-position: center 40%;
           z-index: 0;
           pointer-events: none;
+          transition: filter 3s ease;
         }
 
-        .player-ui {
+        .rain-layer {
           position: absolute;
-          inset: 0;
-          z-index: 10;
-          display: flex;
-          overflow: hidden;
-          pointer-events: none;
-        }
-
-        .panel-left {
-          position: relative;
-          width: 68%;
-          height: 100%;
-          flex-shrink: 0;
-          overflow: hidden;
-          isolation: isolate;
-        }
-
-        .panel-left-fx {
-          position: absolute;
-          inset: 0;
-          z-index: 0;
-          overflow: hidden;
-          pointer-events: none;
-        }
-
-        .panel-left-tint {
-          position: absolute;
-          inset: 0;
-          z-index: 1;
-          transition: background-color 3s ease;
-          pointer-events: none;
-        }
-
-        .panel-left-canvas {
-          position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
+          inset: -10% -5%;
           z-index: 2;
-          mix-blend-mode: screen;
-          opacity: 0.4;
+          pointer-events: none;
           overflow: hidden;
-          pointer-events: none;
+          transform: rotate(8deg);
         }
 
-        .panel-left-canvas .weather-canvas {
+        .rain-drop {
           position: absolute;
-          inset: 0;
-          width: 100%;
-          height: 100%;
-        }
-
-        .panel-left-gradient {
-          position: absolute;
-          left: 0;
-          right: 0;
-          z-index: 3;
-          pointer-events: none;
-        }
-
-        .panel-left-gradient-top {
-          top: 0;
-          height: 35%;
+          top: -8%;
+          width: 1px;
+          height: clamp(14px, 2.2vh, 28px);
           background: linear-gradient(
             180deg,
-            rgba(0, 0, 0, 0.55) 0%,
-            transparent 30%
+            transparent 0%,
+            rgba(200, 220, 240, 0.35) 100%
           );
+          animation: rain-fall linear infinite;
         }
 
-        .panel-left-gradient-bottom {
-          bottom: 0;
-          height: 45%;
+        @keyframes rain-fall {
+          0% {
+            transform: translateY(0);
+            opacity: 0;
+          }
+          10% {
+            opacity: 0.35;
+          }
+          90% {
+            opacity: 0.35;
+          }
+          100% {
+            transform: translateY(115vh);
+            opacity: 0;
+          }
+        }
+
+        .gradient-top {
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          height: 40%;
+          z-index: 3;
           background: linear-gradient(
-            0deg,
-            rgba(0, 0, 0, 0.7) 0%,
-            transparent 45%
+            180deg,
+            rgba(0, 0, 0, 0.60) 0%,
+            transparent 35%
           );
-        }
-
-        .panel-left-content {
-          position: relative;
-          z-index: 4;
-          height: 100%;
           pointer-events: none;
         }
 
-        .panel-left-content p,
-        .panel-left-content h1 {
-          text-shadow:
-            0 2px 12px rgba(0, 0, 0, 1),
-            0 4px 24px rgba(0, 0, 0, 0.9);
-        }
-
-        .panel-left-top {
-          position: relative;
-          z-index: 1;
-          padding: clamp(12px, 1.8vh, 20px) clamp(14px, 2vw, 22px);
-        }
-
-        .panel-logo {
-          display: block;
-          height: clamp(44px, 6.5vw, 76px);
-          width: auto;
-          object-fit: contain;
-          object-position: left center;
-          filter: brightness(10);
-          opacity: 0.9;
-        }
-
-        .panel-logo-tagline {
-          margin: clamp(4px, 0.5vh, 6px) 0 0;
-          font-size: clamp(9px, 1vw, 12px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.52);
-          letter-spacing: 0.3px;
-        }
-
-        .panel-left-hero {
-          position: absolute;
-          top: 50%;
-          left: 0;
-          right: 0;
-          transform: translateY(-50%);
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          padding: 0 clamp(14px, 2vw, 22px);
-        }
-
-        .hero-eyebrow {
-          margin: 0 0 clamp(6px, 0.8vh, 10px);
-          font-size: clamp(10px, 1.1vw, 13px);
-          font-weight: 700;
-          color: rgba(255, 255, 255, 0.85);
-          letter-spacing: clamp(3px, 0.5vw, 5px);
-          text-transform: uppercase;
-        }
-
-        .hero-title {
-          margin: 0;
-          font-family: Georgia, 'Times New Roman', serif;
-          font-size: clamp(24px, 4.5vw, 52px);
-          font-weight: 800;
-          color: #ffffff;
-          line-height: 1.05;
-          text-shadow:
-            0 2px 16px rgba(0, 0, 0, 1),
-            0 0 40px rgba(0, 0, 0, 0.9);
-        }
-
-        .hero-tagline {
-          margin: clamp(6px, 0.8vh, 10px) 0 0;
-          font-family: Georgia, 'Times New Roman', serif;
-          font-style: italic;
-          font-size: clamp(13px, 1.6vw, 19px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.72);
-        }
-
-        .panel-left-bottom {
+        .gradient-bottom {
           position: absolute;
           bottom: 0;
           left: 0;
           right: 0;
-          padding: clamp(10px, 1.5vh, 16px) clamp(14px, 2vw, 22px);
-          padding-bottom: clamp(16px, 2vh, 24px);
+          height: 50%;
+          z-index: 3;
+          background: linear-gradient(
+            0deg,
+            rgba(0, 0, 0, 0.72) 0%,
+            transparent 45%
+          );
+          pointer-events: none;
         }
 
-        .announce-label {
-          margin: 0 0 clamp(8px, 1vh, 12px);
-          font-size: clamp(9px, 1vw, 11px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.55);
-          letter-spacing: clamp(2px, 0.3vw, 3px);
-          text-transform: uppercase;
-          text-align: center;
-          width: 100%;
-        }
-
-        .announce-body {
-          position: relative;
-          width: 100%;
-          max-width: 92%;
-          min-height: clamp(4.2em, 7vh, 6em);
-        }
-
-        .announce-text {
+        .overlay-ui {
           position: absolute;
           inset: 0;
+          z-index: 20;
+          pointer-events: none;
+        }
+
+        .overlay-ui * {
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
+        }
+
+        .overlay-logo {
+          position: absolute;
+          top: clamp(16px, 2.5vh, 28px);
+          left: clamp(16px, 2.5vw, 28px);
+          height: clamp(52px, 8vw, 88px);
+          width: auto;
+          object-fit: contain;
+          filter: brightness(10);
+          opacity: 0.92;
+        }
+
+        .overlay-weather {
+          position: absolute;
+          top: clamp(16px, 2.5vh, 28px);
+          right: clamp(16px, 2.5vw, 28px);
+          text-align: right;
+        }
+
+        .overlay-temp {
           margin: 0;
-          font-size: clamp(22px, 3.2vw, 36px);
-          font-weight: 400;
-          color: #ffffff;
-          line-height: 1.35;
-          text-align: center;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 1);
-          opacity: 0;
-          transition: opacity 0.65s ease;
+          font-size: clamp(52px, 8vw, 88px);
+          font-weight: 200;
+          color: #fff;
+          line-height: 1;
+          text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
         }
 
-        .announce-text.active {
-          opacity: 1;
+        .overlay-condition {
+          margin: 4px 0 0;
+          font-size: clamp(14px, 1.8vw, 20px);
+          font-weight: 300;
+          color: rgba(255, 255, 255, 0.85);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.9);
         }
 
-        .panel-divider {
-          width: 1px;
-          flex-shrink: 0;
-          background: rgba(255, 255, 255, 0.12);
+        .overlay-feels {
+          margin: 2px 0 0;
+          font-size: clamp(12px, 1.4vw, 16px);
+          font-weight: 300;
+          color: rgba(255, 255, 255, 0.60);
+          text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
         }
 
-        .panel-right {
-          position: relative;
-          width: 32%;
-          height: 100%;
-          flex-shrink: 0;
-          background: rgba(255, 255, 255, 0.06);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
+        .overlay-bottom-left {
+          position: absolute;
+          bottom: clamp(24px, 4vh, 48px);
+          left: clamp(16px, 2.5vw, 28px);
           display: flex;
           flex-direction: column;
-          overflow: hidden;
-          box-shadow: none;
+          gap: clamp(8px, 1.2vh, 14px);
         }
 
-        .panel-section {
-          flex-shrink: 0;
-          padding: clamp(8px, 1.2vh, 13px) clamp(10px, 1.4vw, 16px);
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
-          overflow: hidden;
-        }
-
-        .panel-section-tips {
-          flex: 1;
-          min-height: 0;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
-        }
-
-        .section-header {
-          display: flex;
+        .status-badge {
+          display: inline-flex;
           align-items: center;
-          justify-content: space-between;
-          gap: clamp(6px, 0.8vw, 8px);
-          margin-bottom: clamp(6px, 0.8vh, 8px);
-        }
-
-        .section-label {
-          display: flex;
-          align-items: center;
-          gap: clamp(4px, 0.5vw, 6px);
-          font-size: clamp(8px, 0.9vw, 9px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.5);
-          letter-spacing: clamp(1px, 0.2vw, 2px);
+          gap: 6px;
+          padding: 6px 14px;
+          border-radius: 20px;
+          font-size: clamp(11px, 1.3vw, 14px);
+          font-weight: 700;
+          letter-spacing: 1px;
           text-transform: uppercase;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          width: fit-content;
         }
 
-        .live-dot {
-          width: clamp(4px, 0.5vw, 5px);
-          height: clamp(4px, 0.5vw, 5px);
+        .status-live-dot {
+          width: 6px;
+          height: 6px;
           border-radius: 50%;
           background: #4ade80;
+          flex-shrink: 0;
           animation: live-pulse 2s ease-in-out infinite;
         }
 
@@ -959,318 +787,87 @@ export default function Player() {
           50% { opacity: 0.35; }
         }
 
-        .section-meta {
-          font-size: clamp(8px, 0.9vw, 9px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .weather-hero-row {
+        .conditions-row {
           display: flex;
-          align-items: center;
-          gap: clamp(12px, 1.6vw, 20px);
-          margin-bottom: clamp(6px, 0.8vh, 8px);
+          gap: clamp(8px, 1.5vw, 16px);
+          flex-wrap: wrap;
         }
 
-        .weather-clock-col {
-          flex-shrink: 0;
-          padding-top: clamp(2px, 0.3vh, 4px);
+        .condition-card {
+          background: rgba(0, 0, 0, 0.42);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border: 0.5px solid rgba(255, 255, 255, 0.12);
+          border-radius: 10px;
+          padding: clamp(8px, 1vh, 12px) clamp(10px, 1.5vw, 16px);
         }
 
-        .weather-temp-col {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .weather-temp {
+        .condition-label {
           margin: 0;
-          font-size: clamp(28px, 3.6vw, 42px);
-          font-weight: 200;
-          line-height: 1;
-          color: #ffffff;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .weather-condition {
-          margin: clamp(2px, 0.3vh, 4px) 0 0;
-          font-size: clamp(11px, 1.3vw, 15px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.88);
-          text-transform: capitalize;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .weather-feels {
-          margin: clamp(2px, 0.3vh, 3px) 0 0;
-          font-size: clamp(10px, 1.1vw, 13px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.52);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .detail-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: clamp(4px, 0.5vh, 5px) 0;
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .detail-row:last-of-type {
-          border-bottom: none;
-        }
-
-        .detail-label {
-          font-size: clamp(10px, 1.1vw, 12px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .detail-value {
-          font-size: clamp(11px, 1.2vw, 13px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.9);
-          text-align: right;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .forecast-block {
-          border-top: 0.5px solid rgba(255, 255, 255, 0.07);
-          padding-top: clamp(6px, 0.8vh, 7px);
-          margin-top: clamp(6px, 0.8vh, 7px);
-        }
-
-        .forecast-strip {
-          display: flex;
-          align-items: stretch;
-        }
-
-        .forecast-slot {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-          gap: clamp(2px, 0.3vh, 3px);
-          padding: 0 clamp(2px, 0.3vw, 4px);
-          border-right: 0.5px solid rgba(255, 255, 255, 0.07);
-          min-width: 0;
-        }
-
-        .forecast-slot:last-child {
-          border-right: none;
-        }
-
-        .forecast-time {
-          margin: 0;
-          font-size: clamp(8px, 0.9vw, 9px);
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .forecast-temp {
-          margin: 0;
-          font-size: clamp(11px, 1.3vw, 14px);
-          font-weight: 500;
-          color: #ffffff;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .forecast-rain {
-          margin: 0;
-          font-size: clamp(8px, 0.9vw, 9px);
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .forecast-rain-high {
-          color: rgba(147, 197, 253, 0.88);
-        }
-
-        .sun-row {
-          display: flex;
-          justify-content: space-between;
-          gap: clamp(8px, 1vw, 12px);
-        }
-
-        .sun-item-label {
-          margin: 0 0 clamp(2px, 0.3vh, 3px);
-          font-size: clamp(8px, 0.9vw, 9px);
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .sun-item-time {
-          margin: 0;
-          font-size: clamp(10px, 1.1vw, 13px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.8);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .status-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: clamp(4px, 0.5vw, 5px);
-          background: rgba(16, 68, 36, 0.8);
-          border: 0.5px solid rgba(74, 222, 128, 0.3);
-          border-radius: clamp(2px, 0.3vw, 3px);
-          padding: clamp(1px, 0.2vh, 1px) clamp(5px, 0.7vw, 7px);
-          font-size: clamp(8px, 0.9vw, 9px);
-          font-weight: 700;
-          color: #4ade80;
-          letter-spacing: 0.8px;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .course-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: clamp(5px, 0.7vw, 7px);
-        }
-
-        .course-card {
-          background: rgba(255, 255, 255, 0.04);
-          border: 0.5px solid rgba(255, 255, 255, 0.08);
-          border-radius: clamp(4px, 0.5vw, 6px);
-          padding: clamp(5px, 0.8vh, 8px) clamp(7px, 0.9vw, 9px);
-        }
-
-        .course-card-label {
-          margin: 0;
-          font-size: clamp(8px, 0.9vw, 9px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.5);
+          font-size: clamp(9px, 1vw, 11px);
+          color: rgba(255, 255, 255, 0.45);
           text-transform: uppercase;
-          letter-spacing: 0.5px;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          letter-spacing: 0.8px;
         }
 
-        .course-card-value {
-          margin: clamp(2px, 0.3vh, 2px) 0 0;
-          font-size: clamp(11px, 1.3vw, 14px);
+        .condition-value {
+          margin: 2px 0 0;
+          font-size: clamp(13px, 1.6vw, 17px);
           font-weight: 500;
-          color: #ffffff;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
+          color: #fff;
         }
 
-        .tee-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: clamp(4px, 0.6vh, 6px) 0;
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+        .daily-note {
+          background: rgba(0, 0, 0, 0.45);
+          backdrop-filter: blur(12px);
+          -webkit-backdrop-filter: blur(12px);
+          border-left: 2px solid rgba(251, 191, 36, 0.60);
+          border-radius: 0 8px 8px 0;
+          padding: 8px 12px;
+          max-width: clamp(280px, 40vw, 480px);
+          font-size: clamp(11px, 1.3vw, 14px);
+          color: rgba(255, 255, 255, 0.88);
+          text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+          line-height: 1.4;
         }
 
-        .tee-row:last-of-type {
-          border-bottom: none;
-        }
-
-        .tee-time {
-          font-size: clamp(11px, 1.2vw, 13px);
-          color: rgba(255, 255, 255, 0.8);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .tee-status {
-          font-size: clamp(10px, 1.1vw, 12px);
-          font-weight: 600;
-          letter-spacing: 0.3px;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .tee-status-green { color: #4ade80; }
-        .tee-status-yellow { color: #fbbf24; }
-        .tee-status-muted { color: rgba(255, 255, 255, 0.5); }
-
-        .tee-footer {
-          margin: clamp(4px, 0.6vh, 5px) 0 0;
-          font-size: clamp(8px, 0.9vw, 9px);
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .tips-list {
-          flex: 1;
-          min-height: 0;
-          overflow: hidden;
+        .overlay-bottom-right {
+          position: absolute;
+          bottom: clamp(24px, 4vh, 48px);
+          right: clamp(16px, 2.5vw, 28px);
           display: flex;
           flex-direction: column;
+          align-items: flex-end;
+          gap: clamp(6px, 1vh, 10px);
         }
 
-        .tip-row {
-          display: flex;
-          align-items: flex-start;
-          gap: clamp(6px, 0.8vw, 8px);
-          padding: clamp(4px, 0.6vh, 6px) 0;
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
-          flex-shrink: 0;
-        }
-
-        .tip-row:last-child {
-          border-bottom: none;
-        }
-
-        .daily-note-block {
-          background: rgba(251, 191, 36, 0.08);
-          border: 0.5px solid rgba(251, 191, 36, 0.20);
-          border-radius: 6px;
-          padding: 8px 10px;
-          margin-bottom: 8px;
-        }
-
-        .daily-note-label {
-          display: block;
-          font-size: 9px;
-          letter-spacing: 1px;
-          color: rgba(251, 191, 36, 0.70);
-          margin-bottom: 4px;
-        }
-
-        .daily-note-text {
+        .overlay-wind {
           margin: 0;
-          font-size: clamp(11px, 1.2vw, 13px);
-          color: rgba(255, 255, 255, 0.90);
-          line-height: 1.4;
-        }
-
-        .tip-icon {
-          font-size: clamp(11px, 1.2vw, 13px);
-          color: rgba(255, 255, 255, 0.5);
-          flex-shrink: 0;
-          margin-top: clamp(1px, 0.15vh, 1px);
-          line-height: 1;
-        }
-
-        .tip-text {
-          margin: 0;
-          font-size: clamp(10px, 1.1vw, 12px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.7);
-          line-height: 1.4;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-        }
-
-        .clock-time {
-          margin: 0;
-          font-size: clamp(28px, 3.6vw, 42px);
+          font-size: clamp(20px, 3vw, 32px);
           font-weight: 200;
-          color: #ffffff;
-          letter-spacing: clamp(0.5px, 0.1vw, 1px);
-          font-variant-numeric: tabular-nums;
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-          white-space: nowrap;
+          color: #fff;
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
         }
 
-        .clock-date {
-          margin: clamp(2px, 0.3vh, 4px) 0 0;
-          font-size: clamp(8px, 0.95vw, 11px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.5);
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.92);
-          white-space: nowrap;
+        .overlay-stat {
+          margin: 0;
+          font-size: clamp(12px, 1.4vw, 15px);
+          text-shadow: 0 1px 6px rgba(0, 0, 0, 0.9);
+        }
+
+        .overlay-center-tip {
+          position: absolute;
+          bottom: clamp(24px, 4vh, 48px);
+          left: 50%;
+          transform: translateX(-50%);
+          text-align: center;
+          max-width: clamp(300px, 45vw, 560px);
+          margin: 0;
+          font-size: clamp(12px, 1.5vw, 16px);
+          font-weight: 300;
+          color: rgba(255, 255, 255, 0.80);
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
+          pointer-events: none;
         }
 
         .player-error {
@@ -1293,221 +890,86 @@ export default function Player() {
         src={COURSE_PHOTO_URL}
         alt=""
         aria-hidden="true"
+        style={{ filter: photoFilter }}
       />
 
-      <div className="player-ui">
-        {error && <p className="player-error">Error: {error}</p>}
-
-        <div className="panel-left">
-          <div className="panel-left-fx" aria-hidden="true">
-            <div
-              className="panel-left-tint"
+      {showRain && (
+        <div className="rain-layer" aria-hidden="true">
+          {RAIN_DROPS.map((drop) => (
+            <span
+              key={drop.id}
+              className="rain-drop"
               style={{
-                backgroundColor: visual.skyTintColor,
-                opacity: visual.skyTintOpacity,
+                left: drop.left,
+                animationDelay: drop.delay,
+                animationDuration: drop.duration,
               }}
             />
-            <div className="panel-left-canvas">
-              <WeatherCanvas visualState={visual} />
-            </div>
-            <div className="panel-left-gradient panel-left-gradient-top" />
-            <div className="panel-left-gradient panel-left-gradient-bottom" />
-          </div>
+          ))}
+        </div>
+      )}
 
-          <div className="panel-left-content">
-            <div className="panel-left-top">
-              <img
-                className="panel-logo"
-                src={LOGO_URL}
-                alt="Olde Sycamore Golf Club"
-              />
-              <p className="panel-logo-tagline">18 holes · Est. 1997</p>
-            </div>
+      <div className="gradient-top" aria-hidden="true" />
+      <div className="gradient-bottom" aria-hidden="true" />
 
-            <div className="panel-left-hero">
-              <p className="announce-label">Club Announcements</p>
-              <div className="announce-body">
-                {ANNOUNCEMENTS.map((msg, i) => (
-                  <p
-                    key={i}
-                    className={`announce-text${i === messageIndex ? ' active' : ''}`}
-                  >
-                    {msg}
-                  </p>
-                ))}
-              </div>
-            </div>
+      <div className="overlay-ui">
+        {error && <p className="player-error">Error: {error}</p>}
 
-            <div className="panel-left-bottom">
-              <p className="hero-eyebrow">Welcome to</p>
-              <h1 className="hero-title">Olde Sycamore Golf Club</h1>
-              <p className="hero-tagline">
-                Experience. Tradition. Community.
-              </p>
-            </div>
-          </div>
+        <img
+          className="overlay-logo"
+          src={LOGO_URL}
+          alt="Olde Sycamore Golf Club"
+        />
+
+        <div className="overlay-weather">
+          <p className="overlay-temp">{tempDisplay}°</p>
+          <p className="overlay-condition">
+            {weather?.condition_text || '—'}
+          </p>
+          <p className="overlay-feels">Feels like {feelsDisplay}°</p>
         </div>
 
-        <div className="panel-divider" aria-hidden="true" />
+        <div className="overlay-bottom-left">
+          <span
+            className="status-badge"
+            style={{
+              background: statusBadgeStyle.background,
+              border: statusBadgeStyle.border,
+              color: statusBadgeStyle.color,
+            }}
+          >
+            {statusKey === 'open' && <span className="status-live-dot" />}
+            {statusBadgeLabel}
+          </span>
 
-        <div className="panel-right">
-          <section className="panel-section">
-            <div className="section-header">
-              <span className="section-label">
-                <span className="live-dot" />
-                Live Weather
-              </span>
-              <span className="section-meta">{updatedLabel}</span>
-            </div>
-
-            <div className="weather-hero-row">
-              <div className="weather-clock-col">
-                <p className="clock-time">{clockStr}</p>
-                <p className="clock-date">{dateStr}</p>
-              </div>
-              <div className="weather-temp-col">
-                <p className="weather-temp">{tempDisplay}°</p>
-                <p className="weather-condition">
-                  {weather?.condition_text || '—'}
-                </p>
-                <p className="weather-feels">Feels like {feelsDisplay}°</p>
-              </div>
-            </div>
-
-            <div className="detail-row">
-              <span className="detail-label">Wind</span>
-              <span className="detail-value">{windLabel}</span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Humidity</span>
-              <span className="detail-value">
-                {weather?.humidity != null
-                  ? `${Math.round(weather.humidity)}%`
-                  : '—'}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">UV Index</span>
-              <span
-                className="detail-value"
-                style={{ color: getUvLabelColor(weather?.uv_index) }}
-              >
-                {weather?.uv_index != null ? weather.uv_index : '—'} ·{' '}
-                {getUvLabel(weather?.uv_index)}
-              </span>
-            </div>
-            <div className="detail-row">
-              <span className="detail-label">Rain Chance</span>
-              <span className="detail-value">
-                {precipProb != null ? `${Math.round(precipProb)}%` : '—'}
-              </span>
-            </div>
-
-            <div className="forecast-block">
-              <div className="forecast-strip">
-                {forecastSlots.length > 0 ? (
-                  forecastSlots.map((slot, i) => {
-                    const precipVal = toNum(slot.precip)
-                    const rainHigh = precipVal != null && precipVal > 30
-                    return (
-                      <div key={i} className="forecast-slot">
-                        <p className="forecast-time">
-                          {formatHourCompact(slot.time)}
-                        </p>
-                        <p className="forecast-temp">
-                          {slot.temp != null
-                            ? `${Math.round(Number(slot.temp))}°`
-                            : '—'}
-                        </p>
-                        <p
-                          className={`forecast-rain${rainHigh ? ' forecast-rain-high' : ''}`}
-                        >
-                          {precipVal != null ? `${Math.round(precipVal)}%` : '—'}
-                        </p>
-                      </div>
-                    )
-                  })
-                ) : (
-                  <p className="section-meta" style={{ width: '100%', textAlign: 'center' }}>
-                    Forecast unavailable
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="forecast-block sun-row">
-              <div>
-                <p className="sun-item-label">Sunrise</p>
-                <p className="sun-item-time">{sunriseDisplay}</p>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <p className="sun-item-label">Sunset</p>
-                <p className="sun-item-time">{sunsetDisplay}</p>
-              </div>
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <div className="section-header">
-              <span className="section-label">Course Status</span>
-              <span
-                className="status-badge"
-                style={{
-                  background: statusBadgeStyle.background,
-                  border: statusBadgeStyle.border,
-                  color: statusBadgeStyle.color,
-                }}
-              >
-                <span className="live-dot" />
-                {statusBadgeLabel}
-              </span>
-            </div>
-            <div className="course-grid">
-              {courseStatsCards.map((card) => (
-                <div key={card.label} className="course-card">
-                  <p className="course-card-label">{card.label}</p>
-                  <p className="course-card-value">{card.value}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel-section">
-            <div className="section-header">
-              <span className="section-label">Tee Time Availability</span>
-              <span className="section-meta">18-Hole</span>
-            </div>
-            {TEE_TIMES.map((row) => (
-              <div key={row.time} className="tee-row">
-                <span className="tee-time">{row.time}</span>
-                <span className={`tee-status tee-status-${row.tone}`}>
-                  {row.status}
-                </span>
+          <div className="conditions-row">
+            {conditionItems.map((item) => (
+              <div key={item.label} className="condition-card">
+                <p className="condition-label">{item.label}</p>
+                <p className="condition-value">{item.value}</p>
               </div>
             ))}
-            <p className="tee-footer">
-              Book at oldesycamoregolf.com · 704-573-1000
-            </p>
-          </section>
+          </div>
 
-          <section className="panel-section-tips">
-            <span className="section-label">Golfer Tips</span>
-            <div className="tips-list">
-              {dailyNote ? (
-                <div className="daily-note-block">
-                  <span className="daily-note-label">NOTE</span>
-                  <p className="daily-note-text">{dailyNote}</p>
-                </div>
-              ) : null}
-              {golferTips.map((tip, i) => (
-                <div key={i} className="tip-row">
-                  <TablerIcon name={tip.icon} />
-                  <p className="tip-text">{tip.text}</p>
-                </div>
-              ))}
-            </div>
-          </section>
+          {dailyNote ? <p className="daily-note">{dailyNote}</p> : null}
         </div>
+
+        <div className="overlay-bottom-right">
+          <p className="overlay-wind">{windLabel}</p>
+          <p className="overlay-stat" style={{ color: uvColor }}>
+            {uvLabelText}
+          </p>
+          <p
+            className="overlay-stat"
+            style={{ color: 'rgba(255, 255, 255, 0.60)' }}
+          >
+            {rainLabelText}
+          </p>
+        </div>
+
+        {centerTip ? (
+          <p className="overlay-center-tip">{centerTip}</p>
+        ) : null}
       </div>
     </div>
   )
