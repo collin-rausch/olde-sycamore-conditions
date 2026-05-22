@@ -56,14 +56,53 @@ const RAIN_DROPS = Array.from({ length: 60 }, (_, i) => ({
   duration: `${(0.6 + (i % 5) * 0.15).toFixed(2)}s`,
 }))
 
-const SLOT_COUNT = 5
+const SLOT_IDS = {
+  TOURNAMENT: 'tournament',
+  PRO: 'pro',
+  NOTICE: 'notice',
+  TIPS: 'tips',
+}
 
-const SLOT_META = [
-  { label: 'Club tournament', dotColor: '#4ade80' },
-  { label: 'Member spotlight', dotColor: '#fbbf24' },
-  { label: 'PGA Tour · live', dotColor: '#60a5fa' },
-  { label: "Today's forecast", dotColor: null },
-  { label: 'Course tips', dotColor: null },
+const ALL_SLOT_DEFS = [
+  {
+    id: SLOT_IDS.TOURNAMENT,
+    label: 'Club tournament',
+    dotColor: 'var(--os-green-badge)',
+  },
+  { id: SLOT_IDS.PRO, label: 'PGA Tour · live', dotColor: 'var(--os-blue)' },
+  {
+    id: SLOT_IDS.NOTICE,
+    label: 'Course notice',
+    dotColor: 'var(--os-amber)',
+    requiresNotice: true,
+  },
+  { id: SLOT_IDS.TIPS, label: 'Course tips', dotColor: null },
+]
+
+const PRO_SHOP_ROWS = [
+  { label: 'Pro shop', value: '7 AM – 6 PM' },
+  { label: 'Bar & grill', value: '11 AM – 9 PM' },
+  { label: 'Happy hour', value: '4–7 PM · $5 drafts', highlight: true },
+  { label: "Today's special", value: 'Prime Rib Night' },
+  { label: 'Cart rental', value: '$20 · Paths only today' },
+]
+
+const COMMUNITY_ITEMS = [
+  {
+    type: 'HOLE IN ONE',
+    name: 'Robert Chen',
+    detail: 'Hole 7 · 162 yds · 7-iron · May 21',
+  },
+  {
+    type: 'LOW ROUND',
+    name: 'J. Williams',
+    detail: '68 · May 20 · -4 under par',
+  },
+  {
+    type: 'UPCOMING',
+    name: "Men's Invitational",
+    detail: 'May 24–26 · Registration open',
+  },
 ]
 
 const DEMO_CLUB_LEADERBOARD = {
@@ -77,15 +116,9 @@ const DEMO_CLUB_LEADERBOARD = {
   ],
 }
 
-const DEMO_ACHIEVEMENT = {
-  type: 'HOLE IN ONE',
-  name: 'Robert Chen',
-  detail: 'Hole 7 · 162 yards · 7-iron',
-  date: 'May 21, 2026',
-}
-
 const DEMO_PRO_LEADERBOARD = {
-  title: 'Charles Schwab Challenge · R3',
+  title: 'Charles Schwab Challenge',
+  round: 'R3',
   rows: [
     { position: 1, flag: '🇺🇸', name: 'S. Scheffler', score: -18 },
     { position: 2, flag: '🇨🇦', name: 'C. Conners', score: -15 },
@@ -135,22 +168,22 @@ function getStatusBadgeStyle(status) {
   const key = normalizeCourseStatusKey(status)
   if (key === 'closed') {
     return {
-      background: 'rgba(127,29,29,0.75)',
-      border: '0.5px solid rgba(248,113,113,0.50)',
-      color: '#f87171',
+      background: 'rgba(127,29,29,0.82)',
+      border: '0.5px solid rgba(248,113,113,0.55)',
+      color: 'var(--os-red)',
     }
   }
   if (key === 'frost') {
     return {
-      background: 'rgba(29,78,216,0.60)',
-      border: '0.5px solid rgba(147,197,253,0.50)',
+      background: 'rgba(29,78,216,0.72)',
+      border: '0.5px solid rgba(96,165,250,0.55)',
       color: '#93c5fd',
     }
   }
   return {
-    background: 'rgba(16,68,36,0.75)',
-    border: '0.5px solid rgba(74,222,128,0.50)',
-    color: '#4ade80',
+    background: 'rgba(16,68,36,0.82)',
+    border: '0.5px solid rgba(74,222,128,0.55)',
+    color: 'var(--os-green-badge)',
   }
 }
 
@@ -210,7 +243,7 @@ function parseSlotHour(isoOrTime) {
   return match ? parseInt(match[1], 10) : 0
 }
 
-function formatHourLabel(isoOrTime) {
+function formatHourCompact(isoOrTime) {
   if (!isoOrTime) return '—'
   const s = String(isoOrTime)
   let h = 0
@@ -236,18 +269,33 @@ function formatHourLabel(isoOrTime) {
   return `${hour12} ${suffix}`
 }
 
+function getCurrentHourlyIndex(hourly, referenceDate) {
+  const times = hourly?.time || []
+  if (times.length === 0) return -1
+
+  const currentHour = getEasternHour(referenceDate)
+  for (let i = 0; i < times.length; i++) {
+    if (parseSlotHour(times[i]) >= currentHour) return i
+  }
+  return times.length - 1
+}
+
+function getDisplayTemperature(weather, hourly, referenceDate) {
+  if (hourly?.temperature) {
+    const idx = getCurrentHourlyIndex(hourly, referenceDate)
+    if (idx >= 0) {
+      const hourlyTemp = toNum(hourly.temperature[idx])
+      if (hourlyTemp != null) return hourlyTemp
+    }
+  }
+  return toNum(weather?.temperature_f)
+}
+
 function getForecastSlots(hourly, referenceDate) {
   const times = hourly?.time || []
   if (times.length === 0) return []
 
-  const currentHour = getEasternHour(referenceDate)
-  let start = 0
-  for (let i = 0; i < times.length; i++) {
-    if (parseSlotHour(times[i]) >= currentHour) {
-      start = i
-      break
-    }
-  }
+  const start = Math.max(0, getCurrentHourlyIndex(hourly, referenceDate))
 
   const slots = []
   for (let j = 0; j < 6; j++) {
@@ -272,12 +320,24 @@ function getUvLabel(uv) {
 }
 
 function getUvLabelColor(uv) {
-  if (uv == null) return 'rgba(255, 255, 255, 0.70)'
-  if (uv <= 2) return 'rgba(255, 255, 255, 0.70)'
+  if (uv == null) return 'var(--os-white-80)'
+  if (uv <= 2) return 'var(--os-white-80)'
   if (uv <= 5) return '#fbbf24'
   if (uv <= 7) return '#f97316'
   if (uv <= 10) return '#ef4444'
   return '#a855f7'
+}
+
+function getUvRowText(uv) {
+  if (uv == null) return '—'
+  return `${uv} · ${getUvLabel(uv)}`
+}
+
+function getRainSummary(precip) {
+  if (precip == null || precip <= 20) return null
+  if (precip > 60) return 'Heavy rain likely today'
+  if (precip >= 40) return 'Rain likely this afternoon'
+  return 'Chance of showers later'
 }
 
 function isRainStormCode(code) {
@@ -478,7 +538,10 @@ function formatThruDisplay(thru) {
 function renderClubTournament({ title, rows } = DEMO_CLUB_LEADERBOARD) {
   return (
     <div className="slot-leaderboard">
-      <p className="slot-subtitle">{title}</p>
+      <div className="slot-subheader">
+        <p className="slot-title">{title}</p>
+        <p className="slot-live">● Live</p>
+      </div>
       {rows.map((row, i) => {
         const score = formatClubScore(row.score)
         return (
@@ -499,23 +562,17 @@ function renderClubTournament({ title, rows } = DEMO_CLUB_LEADERBOARD) {
   )
 }
 
-function renderMemberAchievement(
-  achievement = DEMO_ACHIEVEMENT,
-) {
-  return (
-    <div className="slot-achievement">
-      <p className="slot-achievement-type">{achievement.type}</p>
-      <p className="slot-achievement-name">{achievement.name}</p>
-      <p className="slot-achievement-detail">{achievement.detail}</p>
-      <p className="slot-achievement-date">{achievement.date}</p>
-    </div>
-  )
-}
-
-function renderProLeaderboard({ title, rows } = DEMO_PRO_LEADERBOARD) {
+function renderProLeaderboard({
+  title,
+  round,
+  rows,
+} = DEMO_PRO_LEADERBOARD) {
   return (
     <div className="slot-leaderboard slot-pro">
-      <p className="slot-subtitle">{title}</p>
+      <div className="slot-subheader slot-subheader-pro">
+        <p className="slot-title">{title}</p>
+        <p className="slot-round">{round}</p>
+      </div>
       {rows.map((row, i) => (
         <div
           key={row.position}
@@ -532,29 +589,27 @@ function renderProLeaderboard({ title, rows } = DEMO_PRO_LEADERBOARD) {
   )
 }
 
-function renderForecast(slots) {
+function renderPanelForecast(slots) {
   if (!slots || slots.length === 0) {
-    return (
-      <p className="slot-empty">Forecast unavailable</p>
-    )
+    return <p className="panel-forecast-empty">Forecast unavailable</p>
   }
 
   return (
-    <div className="slot-forecast">
+    <div className="panel-forecast">
       {slots.map((slot, i) => {
         const precipVal = slot.precip ?? 0
         const rainHigh = precipVal >= 30
         return (
           <div
             key={`${slot.time}-${i}`}
-            className={`forecast-col${i < slots.length - 1 ? ' forecast-col-divider' : ''}`}
+            className={`panel-forecast-col${i < slots.length - 1 ? ' panel-forecast-col-divider' : ''}`}
           >
-            <p className="forecast-time">{formatHourLabel(slot.time)}</p>
-            <p className="forecast-temp">
+            <p className="panel-forecast-time">{formatHourCompact(slot.time)}</p>
+            <p className="panel-forecast-temp">
               {slot.temp != null ? `${Math.round(slot.temp)}°` : '—'}
             </p>
             <p
-              className={`forecast-rain${rainHigh ? ' forecast-rain-high' : ''}`}
+              className={`panel-forecast-rain${rainHigh ? ' panel-forecast-rain-high' : ''}`}
             >
               {slot.precip != null ? `${Math.round(precipVal)}%` : '—'}
             </p>
@@ -565,16 +620,25 @@ function renderForecast(slots) {
   )
 }
 
+function renderCourseNotice(notice) {
+  return (
+    <div className="slot-notice">
+      <p className="slot-notice-text">{notice}</p>
+      <div className="slot-notice-divider" aria-hidden="true" />
+      <p className="slot-notice-byline">Posted by Olde Sycamore Golf Club</p>
+    </div>
+  )
+}
+
 function renderGolferTips(tips) {
   return (
     <div className="slot-tips">
       {tips.map((tip, i) => (
-        <div key={i} className="tip-row">
-          {tip.isNote ? (
-            <span className="tip-note-label">NOTE</span>
-          ) : (
-            <TablerIcon name={tip.icon} />
-          )}
+        <div
+          key={i}
+          className={`tip-row${i < tips.length - 1 ? ' tip-row-border' : ''}`}
+        >
+          <TablerIcon name={tip.icon} />
           <p className="tip-text">{tip.text}</p>
         </div>
       ))}
@@ -582,17 +646,15 @@ function renderGolferTips(tips) {
   )
 }
 
-function renderCardSlot(slotIndex, { forecastSlots, tipsForCard }) {
-  switch (slotIndex) {
-    case 0:
+function renderCardSlot(slotId, { tipsForCard, courseNotice }) {
+  switch (slotId) {
+    case SLOT_IDS.TOURNAMENT:
       return renderClubTournament(DEMO_CLUB_LEADERBOARD)
-    case 1:
-      return renderMemberAchievement(DEMO_ACHIEVEMENT)
-    case 2:
+    case SLOT_IDS.PRO:
       return renderProLeaderboard(DEMO_PRO_LEADERBOARD)
-    case 3:
-      return renderForecast(forecastSlots)
-    case 4:
+    case SLOT_IDS.NOTICE:
+      return renderCourseNotice(courseNotice)
+    case SLOT_IDS.TIPS:
       return renderGolferTips(tipsForCard)
     default:
       return null
@@ -607,7 +669,7 @@ export default function Player() {
   const [clock, setClock] = useState(() => new Date())
   const [messageIndex, setMessageIndex] = useState(0)
   const [, setFrame] = useState(0)
-  const [cardSlot, setCardSlot] = useState(0)
+  const [activeSlotIndex, setActiveSlotIndex] = useState(0)
   const [cardFade, setCardFade] = useState(1)
   const hasResetVisuals = useRef(false)
   const fadeTimeoutRef = useRef(null)
@@ -746,6 +808,37 @@ export default function Player() {
     return () => clearInterval(rotate)
   }, [])
 
+  const courseNotice = courseStatus?.daily_note?.trim() || ''
+
+  const activeSlots = useMemo(
+    () =>
+      ALL_SLOT_DEFS.filter((s) => !s.requiresNotice || courseNotice),
+    [courseNotice],
+  )
+
+  useEffect(() => {
+    setActiveSlotIndex(0)
+    setCardFade(1)
+  }, [activeSlots.length, courseNotice])
+
+  useEffect(() => {
+    if (activeSlots.length === 0) return
+
+    const intervalId = setInterval(() => {
+      setCardFade(0)
+      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
+      fadeTimeoutRef.current = setTimeout(() => {
+        setActiveSlotIndex((i) => (i + 1) % activeSlots.length)
+        setCardFade(1)
+      }, 300)
+    }, 10000)
+
+    return () => {
+      clearInterval(intervalId)
+      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
+    }
+  }, [activeSlots.length])
+
   useEffect(() => {
     if (!started) return
 
@@ -766,22 +859,6 @@ export default function Player() {
     rafId = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafId)
   }, [started, weather])
-
-  useEffect(() => {
-    const intervalId = setInterval(() => {
-      setCardFade(0)
-      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
-      fadeTimeoutRef.current = setTimeout(() => {
-        setCardSlot((s) => (s + 1) % SLOT_COUNT)
-        setCardFade(1)
-      }, 400)
-    }, 10000)
-
-    return () => {
-      clearInterval(intervalId)
-      if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
-    }
-  }, [])
 
   const visualWeather = weather ?? DEFAULT_WEATHER
   const hourly = useMemo(
@@ -805,8 +882,11 @@ export default function Player() {
 
   const showRain = (precipProb ?? 0) > 40
 
-  const tempDisplay =
-    weather?.temperature_f != null ? Math.round(weather.temperature_f) : '--'
+  const displayTemp = useMemo(
+    () => getDisplayTemperature(weather, hourly, clock),
+    [weather, hourly, clock],
+  )
+  const tempDisplay = displayTemp != null ? Math.round(displayTemp) : '--'
   const feelsDisplay =
     weather?.feels_like_f != null ? Math.round(weather.feels_like_f) : '--'
 
@@ -816,13 +896,11 @@ export default function Player() {
       : '—'
 
   const uvValue = weather?.uv_index
-  const uvLabelText =
-    uvValue != null ? `UV ${uvValue} · ${getUvLabel(uvValue)}` : 'UV —'
   const uvColor = getUvLabelColor(uvValue)
+  const uvRowText = getUvRowText(uvValue)
   const rainLabelText =
-    precipProb != null ? `${Math.round(precipProb)}% rain` : '— rain'
-
-  const sunRowText = `Sunrise ${sunriseDisplay}  ·  Sunset ${sunsetDisplay}`
+    precipProb != null ? `${Math.round(precipProb)}%` : '—'
+  const rainSummary = getRainSummary(precipProb)
 
   const forecastSlots = useMemo(() => {
     if (!hourly) return []
@@ -847,42 +925,34 @@ export default function Player() {
 
   const statusBadgeLabel = getStatusBadgeLabel(courseStatus?.course_status)
   const statusBadgeStyle = getStatusBadgeStyle(courseStatus?.course_status)
-  const statusKey = normalizeCourseStatusKey(courseStatus?.course_status)
-  const dailyNote = courseStatus?.daily_note?.trim() || ''
 
-  const tipsForCard = useMemo(() => {
-    const tips = getGolferTips(
+  const tipsForCard = useMemo(
+    () =>
+      getGolferTips(
+        weather?.weather_code,
+        windSpeed ?? 0,
+        weather?.uv_index,
+        precipProb ?? 0,
+        weather?.is_day,
+        easternHour,
+        sunriseDisplay,
+      ).slice(0, 3),
+    [
       weather?.weather_code,
-      windSpeed ?? 0,
       weather?.uv_index,
-      precipProb ?? 0,
       weather?.is_day,
+      windSpeed,
+      precipProb,
       easternHour,
       sunriseDisplay,
-    )
-    const result = []
-    if (dailyNote) {
-      result.push({ icon: 'clipboard', text: dailyNote, isNote: true })
-    }
-    for (const tip of tips) {
-      if (result.length >= 3) break
-      result.push(tip)
-    }
-    return result.slice(0, 3)
-  }, [
-    weather?.weather_code,
-    weather?.uv_index,
-    weather?.is_day,
-    windSpeed,
-    precipProb,
-    easternHour,
-    sunriseDisplay,
-    dailyNote,
-  ])
+    ],
+  )
 
   void messageIndex
 
-  const slotMeta = SLOT_META[cardSlot]
+  const currentSlot =
+    activeSlots[activeSlotIndex % activeSlots.length] ?? activeSlots[0]
+
 
   return (
     <div className="player-root">
@@ -890,13 +960,39 @@ export default function Player() {
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
 
         .player-root {
+          --os-green-label: #7ab648;
+          --os-white: #ffffff;
+          --os-white-80: rgba(255, 255, 255, 0.82);
+          --os-white-55: rgba(255, 255, 255, 0.55);
+          --os-white-40: rgba(255, 255, 255, 0.40);
+          --os-divider: rgba(255, 255, 255, 0.07);
+          --os-card: rgba(0, 0, 0, 0.20);
+          --os-card-border: rgba(255, 255, 255, 0.13);
+          --os-green-badge: #4ade80;
+          --os-blue: #60a5fa;
+          --os-amber: #fbbf24;
+          --os-red: #ef4444;
           position: fixed;
           inset: 0;
           width: 100vw;
           height: 100vh;
           overflow: hidden;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          color: #ffffff;
+          color: var(--os-white);
+        }
+
+        .player-root * {
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
+        }
+
+        .left-zone {
+          position: absolute;
+          top: 0;
+          left: 0;
+          bottom: 0;
+          width: 72%;
+          overflow: hidden;
+          z-index: 0;
         }
 
         .scene-photo {
@@ -925,11 +1021,7 @@ export default function Player() {
           top: -8%;
           width: 1px;
           height: clamp(14px, 2.2vh, 28px);
-          background: linear-gradient(
-            180deg,
-            transparent 0%,
-            rgba(200, 220, 240, 0.35) 100%
-          );
+          background: linear-gradient(180deg, transparent 0%, rgba(200, 220, 240, 0.35) 100%);
           animation: rain-fall linear infinite;
         }
 
@@ -940,56 +1032,46 @@ export default function Player() {
           100% { transform: translateY(115vh); opacity: 0; }
         }
 
-        .gradient-top {
+        .gradient-top, .gradient-bottom, .gradient-left {
           position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 40%;
           z-index: 3;
-          background: linear-gradient(
-            180deg,
-            rgba(0, 0, 0, 0.60) 0%,
-            transparent 35%
-          );
           pointer-events: none;
+        }
+
+        .gradient-top {
+          top: 0; left: 0; right: 0;
+          height: 42%;
+          background: linear-gradient(180deg, rgba(0,0,0,0.62) 0%, transparent 40%);
         }
 
         .gradient-bottom {
-          position: absolute;
-          bottom: 0;
-          left: 0;
-          right: 0;
-          height: 50%;
-          z-index: 3;
-          background: linear-gradient(
-            0deg,
-            rgba(0, 0, 0, 0.72) 0%,
-            transparent 45%
-          );
-          pointer-events: none;
+          bottom: 0; left: 0; right: 0;
+          height: 52%;
+          background: linear-gradient(0deg, rgba(0,0,0,0.68) 0%, transparent 48%);
         }
 
-        .overlay-ui {
+        .gradient-left {
+          top: 0; bottom: 0; left: 0;
+          width: 32%;
+          background: linear-gradient(90deg, rgba(0,0,0,0.50) 0%, transparent 22%);
+        }
+
+        .left-ui {
           position: absolute;
           inset: 0;
-          z-index: 20;
+          z-index: 10;
           pointer-events: none;
-        }
-
-        .overlay-ui * {
-          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
         }
 
         .overlay-top-left {
           position: absolute;
-          top: clamp(16px, 2.5vh, 28px);
-          left: clamp(16px, 2.5vw, 28px);
+          top: clamp(14px, 2vh, 20px);
+          left: clamp(14px, 2vw, 20px);
         }
 
         .overlay-logo {
           display: block;
-          height: clamp(48px, 6.5vw, 72px);
+          height: clamp(52px, 7.5vw, 76px);
           width: auto;
           object-fit: contain;
           filter: brightness(10);
@@ -998,74 +1080,99 @@ export default function Player() {
 
         .overlay-tagline {
           margin: clamp(4px, 0.5vh, 6px) 0 0;
-          font-size: clamp(10px, 1.1vw, 13px);
-          font-weight: 400;
-          color: rgba(255, 255, 255, 0.55);
+          font-size: clamp(10px, 1.05vw, 13px);
+          color: var(--os-white);
+          letter-spacing: 0.4px;
         }
 
-        .overlay-weather {
+        .overlay-status-top {
           position: absolute;
-          top: clamp(16px, 2.5vh, 28px);
-          right: clamp(16px, 2.5vw, 28px);
-          text-align: right;
+          top: clamp(14px, 2vh, 20px);
+          left: 62%;
+          transform: translateX(-50%);
+          white-space: nowrap;
         }
 
-        .overlay-temp {
+        .status-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          padding: clamp(6px, 1vh, 10px) clamp(16px, 2.2vw, 22px);
+          border-radius: 24px;
+          font-size: clamp(12px, 1.4vw, 15px);
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+        }
+
+        .status-live-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: currentColor;
+          flex-shrink: 0;
+          animation: live-pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes live-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+
+        .overlay-conditions-left {
+          position: absolute;
+          left: clamp(14px, 2vw, 20px);
+          top: 50%;
+          transform: translateY(-50%);
+          display: flex;
+          flex-direction: column;
+          gap: clamp(12px, 1.6vh, 20px);
+        }
+
+        .condition-stack-label {
           margin: 0;
-          font-size: clamp(52px, 8vw, 88px);
-          font-weight: 200;
-          color: #fff;
-          line-height: 1;
-          text-shadow: 0 2px 16px rgba(0, 0, 0, 0.9);
+          font-size: clamp(9px, 0.9vw, 11px);
+          color: var(--os-green-label);
+          text-transform: uppercase;
+          letter-spacing: 1.2px;
+          font-weight: 500;
         }
 
-        .overlay-condition {
-          margin: 4px 0 0;
-          font-size: clamp(14px, 1.8vw, 20px);
-          font-weight: 300;
-          color: rgba(255, 255, 255, 0.85);
-          text-shadow: 0 2px 16px rgba(0, 0, 0, 0.9);
-        }
-
-        .overlay-feels {
+        .condition-stack-value {
           margin: 2px 0 0;
-          font-size: clamp(12px, 1.4vw, 16px);
-          font-weight: 300;
-          color: rgba(255, 255, 255, 0.55);
-          text-shadow: 0 2px 16px rgba(0, 0, 0, 0.9);
+          font-size: clamp(17px, 2.1vw, 24px);
+          font-weight: 400;
+          color: var(--os-white);
+        }
+
+        .condition-stack-divider {
+          width: 26px;
+          height: 0.5px;
+          background: rgba(122, 182, 72, 0.28);
+          margin-top: 3px;
         }
 
         .center-card {
           position: absolute;
           top: 50%;
-          left: 50%;
+          left: 62%;
           transform: translate(-50%, -50%);
-          width: clamp(320px, 42vw, 520px);
-          background: rgba(0, 0, 0, 0.48);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
-          border: 0.5px solid rgba(255, 255, 255, 0.13);
-          border-radius: 16px;
-          padding: clamp(16px, 2.5vh, 28px) clamp(18px, 2.5vw, 28px);
+          width: clamp(300px, 38vw, 480px);
+          background: var(--os-card);
+          backdrop-filter: blur(22px);
+          -webkit-backdrop-filter: blur(22px);
+          border: 0.5px solid var(--os-card-border);
+          border-radius: 18px;
+          padding: clamp(16px, 2.2vh, 24px) clamp(18px, 2.2vw, 24px);
         }
 
-        .card-header {
+        .card-slot-label {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          margin-bottom: clamp(10px, 1.5vh, 14px);
-        }
-
-        .card-header-left {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-
-        .card-label {
-          margin: 0;
-          font-size: 9px;
-          color: rgba(255, 255, 255, 0.38);
+          gap: 5px;
+          margin: 0 0 clamp(10px, 1.4vh, 16px);
+          font-size: clamp(10px, 1.1vw, 12px);
+          color: var(--os-green-label);
           letter-spacing: 2px;
           text-transform: uppercase;
         }
@@ -1083,425 +1190,400 @@ export default function Player() {
           50% { opacity: 0.4; }
         }
 
-        .card-slot-indicator {
+        .card-content { transition: opacity 0.6s ease; }
+
+        .slot-subheader {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: clamp(8px, 1.2vh, 12px);
+        }
+
+        .slot-title {
           margin: 0;
-          font-size: 9px;
-          color: rgba(255, 255, 255, 0.25);
+          font-size: clamp(16px, 2vw, 22px);
+          font-weight: 300;
+          color: var(--os-white);
         }
 
-        .card-content {
-          transition: opacity 0.8s ease;
-        }
-
-        .slot-subtitle {
-          margin: 0 0 clamp(8px, 1vh, 10px);
-          font-size: clamp(11px, 1.2vw, 13px);
-          font-weight: 500;
-          color: rgba(255, 255, 255, 0.75);
-        }
-
-        .slot-empty {
-          margin: 0;
-          font-size: clamp(11px, 1.2vw, 13px);
-          color: rgba(255, 255, 255, 0.45);
-          text-align: center;
-        }
+        .slot-live { margin: 0; font-size: 11px; color: var(--os-green-badge); }
+        .slot-round { margin: 0; font-size: clamp(11px, 1.2vw, 13px); color: var(--os-green-label); }
 
         .lb-row {
           display: grid;
-          grid-template-columns: 22px 1fr auto auto;
+          grid-template-columns: 18px 1fr auto auto;
           align-items: center;
           gap: 8px;
-          padding: clamp(5px, 0.7vh, 7px) 0;
+          padding: clamp(6px, 1vh, 9px) 0;
         }
 
-        .slot-pro .lb-row {
-          grid-template-columns: 22px 24px 1fr auto;
-        }
+        .slot-pro .lb-row { grid-template-columns: 18px 24px 1fr auto; }
+        .lb-row-border { border-bottom: 0.5px solid rgba(255, 255, 255, 0.06); }
+        .lb-pos { font-size: clamp(10px, 1.2vw, 13px); color: var(--os-green-label); }
+        .lb-flag { font-size: clamp(12px, 1.3vw, 14px); }
+        .lb-name { font-size: clamp(13px, 1.6vw, 16px); color: var(--os-white); font-weight: 400; }
+        .lb-score { font-size: clamp(13px, 1.6vw, 16px); font-weight: 600; text-align: right; }
+        .lb-score-under { color: var(--os-green-badge); }
+        .lb-score-over { color: var(--os-red); }
+        .lb-score-even { color: var(--os-white-80); }
+        .lb-thru { font-size: clamp(10px, 1.1vw, 12px); color: var(--os-green-label); text-align: right; min-width: 36px; }
+        .slot-powered { margin: 8px 0 0; font-size: 9px; color: var(--os-green-label); text-align: right; letter-spacing: 0.5px; }
 
-        .lb-row-border {
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
-        }
+        .slot-notice { text-align: center; padding: clamp(12px, 2vh, 20px) 0; }
+        .slot-notice-text { margin: 0; font-size: clamp(14px, 1.8vw, 20px); font-weight: 300; color: var(--os-white); line-height: 1.6; }
+        .slot-notice-divider { width: 48px; height: 0.5px; background: var(--os-divider); margin: clamp(14px, 2vh, 18px) auto 0; }
+        .slot-notice-byline { margin: 12px 0 0; font-size: 10px; color: var(--os-green-label); }
 
-        .lb-pos {
-          font-size: clamp(10px, 1.1vw, 12px);
-          color: rgba(255, 255, 255, 0.38);
-        }
+        .tip-row { display: flex; align-items: flex-start; gap: 10px; padding: clamp(6px, 1vh, 9px) 0; }
+        .tip-row-border { border-bottom: 0.5px solid rgba(255, 255, 255, 0.06); }
+        .tip-row .ti { font-size: 15px; color: var(--os-green-label); flex-shrink: 0; margin-top: 1px; text-shadow: none; }
+        .tip-text { margin: 0; font-size: clamp(12px, 1.4vw, 15px); color: var(--os-white-80); line-height: 1.5; }
 
-        .lb-flag {
-          font-size: clamp(12px, 1.3vw, 14px);
-        }
-
-        .lb-name {
-          font-size: clamp(11px, 1.3vw, 14px);
-          color: #fff;
-          font-weight: 400;
-        }
-
-        .lb-score {
-          font-size: clamp(11px, 1.3vw, 14px);
-          font-weight: 600;
-          text-align: right;
-        }
-
-        .lb-score-under { color: #4ade80; }
-        .lb-score-over { color: #f87171; }
-        .lb-score-even { color: rgba(255, 255, 255, 0.45); }
-
-        .lb-thru {
-          font-size: clamp(10px, 1.1vw, 12px);
-          color: rgba(255, 255, 255, 0.38);
-          text-align: right;
-          min-width: 32px;
-        }
-
-        .slot-powered {
-          margin: clamp(8px, 1vh, 10px) 0 0;
-          font-size: 9px;
-          color: rgba(255, 255, 255, 0.20);
-          text-align: right;
-        }
-
-        .slot-achievement {
-          text-align: center;
-          padding: clamp(4px, 0.6vh, 8px) 0;
-        }
-
-        .slot-achievement-type {
-          margin: 0;
-          font-size: 10px;
-          color: rgba(255, 255, 255, 0.40);
-          letter-spacing: 2px;
-          text-transform: uppercase;
-        }
-
-        .slot-achievement-name {
-          margin: clamp(8px, 1vh, 12px) 0 0;
-          font-size: clamp(20px, 3vw, 28px);
-          font-weight: 200;
-          color: #fff;
-        }
-
-        .slot-achievement-detail {
-          margin: clamp(4px, 0.6vh, 6px) 0 0;
-          font-size: clamp(12px, 1.5vw, 16px);
-          color: rgba(255, 255, 255, 0.65);
-        }
-
-        .slot-achievement-date {
-          margin: clamp(4px, 0.6vh, 6px) 0 0;
-          font-size: clamp(10px, 1.1vw, 13px);
-          color: rgba(255, 255, 255, 0.38);
-        }
-
-        .slot-forecast {
-          display: flex;
-          align-items: stretch;
-        }
-
-        .forecast-col {
-          flex: 1;
+        .panel-right {
+          position: absolute;
+          top: 0;
+          right: 0;
+          bottom: 0;
+          width: 28%;
+          background: rgba(6, 14, 8, 0.82);
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border-left: 0.5px solid rgba(255, 255, 255, 0.08);
           display: flex;
           flex-direction: column;
+          overflow: hidden;
+          z-index: 20;
+        }
+
+        .panel-section {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.3vw, 14px);
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+          overflow: hidden;
+        }
+
+        .panel-section-inner {
+          flex: 1;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-evenly;
+          gap: 0;
+        }
+
+        .panel-section-header {
+          margin: 0;
+          font-size: clamp(11px, 1.25vw, 14px);
+          color: var(--os-green-label);
+          letter-spacing: 1.8px;
+          text-transform: uppercase;
+          font-weight: 500;
+          flex-shrink: 0;
+        }
+
+        .panel-row {
+          display: flex;
+          justify-content: space-between;
           align-items: center;
+          gap: 8px;
+          padding: clamp(4px, 0.65vh, 6px) 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .panel-row:last-child { border-bottom: none; }
+
+        .panel-row-label {
+          font-size: clamp(11px, 1.2vw, 13px);
+          color: var(--os-green-label);
+          flex-shrink: 0;
+        }
+
+        .panel-row-value {
+          font-size: clamp(11px, 1.2vw, 13px);
+          font-weight: 500;
+          color: var(--os-white);
+          text-align: right;
+          line-height: 1.25;
+        }
+
+        .panel-row-value-highlight { color: var(--os-green-badge); }
+
+        .weather-hero {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 8px;
+        }
+
+        .panel-temp {
+          margin: 0;
+          font-size: clamp(32px, 4.2vw, 48px);
+          font-weight: 200;
+          color: var(--os-white);
+          line-height: 1;
+        }
+
+        .weather-meta { text-align: right; min-width: 0; }
+        .weather-condition {
+          margin: 0;
+          font-size: clamp(12px, 1.3vw, 15px);
+          color: var(--os-white-80);
+          line-height: 1.2;
+        }
+        .weather-feels {
+          margin: 3px 0 0;
+          font-size: clamp(10px, 1.1vw, 12px);
+          color: var(--os-white-80);
+        }
+
+        .weather-stats-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: clamp(4px, 0.6vh, 6px) clamp(8px, 1vw, 12px);
+        }
+
+        .weather-stat-label {
+          margin: 0;
+          font-size: clamp(9px, 1vw, 11px);
+          color: var(--os-green-label);
+          text-transform: uppercase;
+          letter-spacing: 0.6px;
+        }
+
+        .weather-stat-value {
+          margin: 2px 0 0;
+          font-size: clamp(11px, 1.2vw, 13px);
+          font-weight: 500;
+          color: var(--os-white);
+          line-height: 1.2;
+        }
+
+        .rain-summary {
+          margin: 0;
+          font-size: clamp(10px, 1.1vw, 12px);
+          color: var(--os-blue);
+          line-height: 1.3;
+        }
+
+        .panel-forecast-wrap {
+          padding-top: clamp(4px, 0.6vh, 6px);
+          border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+        }
+
+        .panel-forecast { display: flex; }
+        .panel-forecast-col {
+          flex: 1;
           text-align: center;
-          gap: clamp(3px, 0.4vh, 5px);
-          padding: 0 clamp(4px, 0.6vw, 6px);
+          padding: clamp(2px, 0.4vh, 4px) 0;
           min-width: 0;
         }
 
-        .forecast-col-divider {
-          border-right: 0.5px solid rgba(255, 255, 255, 0.08);
-        }
+        .panel-forecast-col-divider { border-right: 0.5px solid rgba(255, 255, 255, 0.10); }
+        .panel-forecast-time { margin: 0; font-size: clamp(8px, 0.95vw, 10px); color: var(--os-green-label); }
+        .panel-forecast-temp { margin: 3px 0 0; font-size: clamp(12px, 1.35vw, 15px); font-weight: 300; color: var(--os-white); }
+        .panel-forecast-rain { margin: 2px 0 0; font-size: clamp(8px, 0.95vw, 10px); color: var(--os-white-80); }
+        .panel-forecast-rain-high { color: var(--os-blue); font-weight: 500; }
+        .panel-forecast-empty { margin: 0; font-size: 10px; color: var(--os-green-label); text-align: center; }
 
-        .forecast-time {
-          margin: 0;
-          font-size: 10px;
-          color: rgba(255, 255, 255, 0.45);
-        }
-
-        .forecast-temp {
-          margin: 0;
-          font-size: clamp(16px, 2.2vw, 22px);
-          font-weight: 300;
-          color: #fff;
-        }
-
-        .forecast-rain {
-          margin: 0;
-          font-size: 10px;
-          color: rgba(255, 255, 255, 0.40);
-        }
-
-        .forecast-rain-high {
-          color: rgba(147, 197, 253, 0.90);
-        }
-
-        .slot-tips {
+        .sun-row {
           display: flex;
-          flex-direction: column;
-          gap: clamp(8px, 1vh, 10px);
-        }
-
-        .tip-row {
-          display: flex;
-          align-items: flex-start;
-          gap: clamp(8px, 1vw, 10px);
-        }
-
-        .tip-row .ti {
-          font-size: 15px;
-          color: rgba(255, 255, 255, 0.35);
-          flex-shrink: 0;
-          margin-top: 2px;
-          text-shadow: none;
-        }
-
-        .tip-note-label {
-          font-size: 9px;
-          letter-spacing: 1px;
-          color: rgba(251, 191, 36, 0.70);
-          flex-shrink: 0;
-          margin-top: 3px;
-          text-shadow: none;
-        }
-
-        .tip-text {
-          margin: 0;
-          font-size: clamp(11px, 1.3vw, 14px);
-          color: rgba(255, 255, 255, 0.75);
-          line-height: 1.5;
-        }
-
-        .overlay-bottom-left {
-          position: absolute;
-          bottom: clamp(20px, 3.5vh, 40px);
-          left: clamp(16px, 2.5vw, 28px);
-          display: flex;
-          flex-direction: column;
-          gap: clamp(8px, 1.2vh, 14px);
-        }
-
-        .status-badge {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 6px 14px;
-          border-radius: 20px;
-          font-size: clamp(11px, 1.3vw, 14px);
-          font-weight: 700;
-          letter-spacing: 1px;
-          text-transform: uppercase;
-          width: fit-content;
-        }
-
-        .status-live-dot {
-          width: 6px;
-          height: 6px;
-          border-radius: 50%;
-          background: #4ade80;
-          flex-shrink: 0;
-          animation: live-pulse 2s ease-in-out infinite;
-        }
-
-        @keyframes live-pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.35; }
-        }
-
-        .conditions-row {
-          display: flex;
+          justify-content: space-between;
           gap: 8px;
-          flex-wrap: wrap;
+          font-size: clamp(10px, 1.1vw, 12px);
         }
 
-        .condition-card {
-          background: rgba(0, 0, 0, 0.42);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 0.5px solid rgba(255, 255, 255, 0.12);
-          border-radius: 10px;
-          padding: clamp(7px, 1vh, 11px) clamp(10px, 1.4vw, 14px);
-        }
+        .sun-label { color: var(--os-green-label); }
+        .sun-value { color: var(--os-white-80); }
 
-        .condition-label {
-          margin: 0;
-          font-size: 9px;
-          color: rgba(255, 255, 255, 0.40);
-          text-transform: uppercase;
-          letter-spacing: 0.8px;
-        }
-
-        .condition-value {
-          margin: 2px 0 0;
-          font-size: clamp(12px, 1.5vw, 16px);
-          font-weight: 500;
-          color: #fff;
-        }
-
-        .daily-note {
-          border-left: 2px solid rgba(251, 191, 36, 0.55);
-          padding: 7px 11px;
-          background: rgba(0, 0, 0, 0.40);
-          backdrop-filter: blur(10px);
-          -webkit-backdrop-filter: blur(10px);
-          border-radius: 0 8px 8px 0;
-          max-width: clamp(260px, 38vw, 460px);
-          font-size: clamp(11px, 1.3vw, 14px);
-          color: rgba(255, 255, 255, 0.85);
-          line-height: 1.4;
-          margin: 0;
-        }
-
-        .overlay-bottom-right {
-          position: absolute;
-          bottom: clamp(20px, 3.5vh, 40px);
-          right: clamp(16px, 2.5vw, 28px);
-          text-align: right;
+        .community-list {
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          align-items: flex-end;
+          justify-content: space-evenly;
+          flex: 1;
+          min-height: 0;
         }
 
-        .overlay-wind {
-          margin: 0;
-          font-size: clamp(20px, 3vw, 32px);
-          font-weight: 200;
-          color: #fff;
-          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+        .community-item {
+          padding: clamp(4px, 0.65vh, 6px) 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
         }
 
-        .overlay-stat {
-          margin: 0;
-          font-size: clamp(12px, 1.4vw, 15px);
-        }
-
-        .overlay-sun {
-          margin: 2px 0 0;
-          font-size: clamp(10px, 1.1vw, 13px);
-          color: rgba(255, 255, 255, 0.42);
-        }
+        .community-item:last-child { border-bottom: none; }
+        .community-type { margin: 0; font-size: clamp(9px, 1vw, 11px); color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
+        .community-name { margin: 2px 0 0; font-size: clamp(12px, 1.3vw, 14px); font-weight: 500; color: var(--os-white); line-height: 1.2; }
+        .community-detail { margin: 2px 0 0; font-size: clamp(10px, 1.1vw, 12px); color: var(--os-white-80); line-height: 1.25; }
 
         .player-error {
-          position: absolute;
+          position: fixed;
           top: clamp(8px, 1vh, 12px);
           left: 50%;
           transform: translateX(-50%);
-          z-index: 30;
+          z-index: 50;
           margin: 0;
-          padding: clamp(4px, 0.6vh, 6px) clamp(8px, 1vw, 12px);
-          font-size: clamp(10px, 1.1vw, 12px);
+          padding: 6px 12px;
+          font-size: 11px;
           background: rgba(0, 0, 0, 0.6);
-          border-radius: clamp(4px, 0.5vw, 6px);
+          border-radius: 6px;
         }
       `}</style>
 
-      <img
-        className="scene-photo"
-        src={COURSE_PHOTO_URL}
-        alt=""
-        aria-hidden="true"
-        style={{ filter: photoFilter }}
-      />
+      {error && <p className="player-error">Error: {error}</p>}
 
-      {showRain && (
-        <div className="rain-layer" aria-hidden="true">
-          {RAIN_DROPS.map((drop) => (
+      <div className="left-zone">
+        <img
+          className="scene-photo"
+          src={COURSE_PHOTO_URL}
+          alt=""
+          aria-hidden="true"
+          style={{ filter: photoFilter }}
+        />
+        {showRain && (
+          <div className="rain-layer" aria-hidden="true">
+            {RAIN_DROPS.map((drop) => (
+              <span
+                key={drop.id}
+                className="rain-drop"
+                style={{
+                  left: drop.left,
+                  animationDelay: drop.delay,
+                  animationDuration: drop.duration,
+                }}
+              />
+            ))}
+          </div>
+        )}
+        <div className="gradient-top" aria-hidden="true" />
+        <div className="gradient-bottom" aria-hidden="true" />
+        <div className="gradient-left" aria-hidden="true" />
+
+        <div className="left-ui">
+          <div className="overlay-top-left">
+            <img className="overlay-logo" src={LOGO_URL} alt="Olde Sycamore Golf Club" />
+            <p className="overlay-tagline">18 holes · Est. 1997</p>
+          </div>
+
+          <div className="overlay-status-top">
             <span
-              key={drop.id}
-              className="rain-drop"
+              className="status-badge"
               style={{
-                left: drop.left,
-                animationDelay: drop.delay,
-                animationDuration: drop.duration,
+                background: statusBadgeStyle.background,
+                border: statusBadgeStyle.border,
+                color: statusBadgeStyle.color,
               }}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="gradient-top" aria-hidden="true" />
-      <div className="gradient-bottom" aria-hidden="true" />
-
-      <div className="overlay-ui">
-        {error && <p className="player-error">Error: {error}</p>}
-
-        <div className="overlay-top-left">
-          <img
-            className="overlay-logo"
-            src={LOGO_URL}
-            alt="Olde Sycamore Golf Club"
-          />
-          <p className="overlay-tagline">18 holes · Est. 1997</p>
-        </div>
-
-        <div className="overlay-weather">
-          <p className="overlay-temp">{tempDisplay}°</p>
-          <p className="overlay-condition">
-            {weather?.condition_text || '—'}
-          </p>
-          <p className="overlay-feels">Feels like {feelsDisplay}°</p>
-        </div>
-
-        <div className="center-card">
-          <div className="card-header">
-            <div className="card-header-left">
-              {slotMeta.dotColor && (
-                <span
-                  className="card-dot"
-                  style={{ background: slotMeta.dotColor }}
-                />
-              )}
-              <p className="card-label">{slotMeta.label}</p>
-            </div>
-            <p className="card-slot-indicator">
-              {cardSlot + 1} / {SLOT_COUNT}
-            </p>
+            >
+              <span className="status-live-dot" />
+              {statusBadgeLabel}
+            </span>
           </div>
-          <div className="card-content" style={{ opacity: cardFade }}>
-            {renderCardSlot(cardSlot, { forecastSlots, tipsForCard })}
-          </div>
-        </div>
 
-        <div className="overlay-bottom-left">
-          <span
-            className="status-badge"
-            style={{
-              background: statusBadgeStyle.background,
-              border: statusBadgeStyle.border,
-              color: statusBadgeStyle.color,
-            }}
-          >
-            {statusKey === 'open' && <span className="status-live-dot" />}
-            {statusBadgeLabel}
-          </span>
-
-          <div className="conditions-row">
-            {conditionItems.map((item) => (
-              <div key={item.label} className="condition-card">
-                <p className="condition-label">{item.label}</p>
-                <p className="condition-value">{item.value}</p>
+          <div className="overlay-conditions-left">
+            {conditionItems.map((item, i) => (
+              <div key={item.label}>
+                <p className="condition-stack-label">{item.label}</p>
+                <p className="condition-stack-value">{item.value}</p>
+                {i < conditionItems.length - 1 && (
+                  <div className="condition-stack-divider" aria-hidden="true" />
+                )}
               </div>
             ))}
           </div>
 
-          {dailyNote ? <p className="daily-note">{dailyNote}</p> : null}
-        </div>
+          {currentSlot && (
+            <div className="center-card">
+              <div className="card-slot-label">
+                {currentSlot.dotColor && (
+                  <span className="card-dot" style={{ background: currentSlot.dotColor }} />
+                )}
+                <span>{currentSlot.label}</span>
+              </div>
+              <div className="card-content" style={{ opacity: cardFade }}>
+                {renderCardSlot(currentSlot.id, { tipsForCard, courseNotice })}
+              </div>
+            </div>
+          )}
 
-        <div className="overlay-bottom-right">
-          <p className="overlay-wind">{windLabel}</p>
-          <p className="overlay-stat" style={{ color: uvColor }}>
-            {uvLabelText}
-          </p>
-          <p
-            className="overlay-stat"
-            style={{ color: 'rgba(255, 255, 255, 0.55)' }}
-          >
-            {rainLabelText}
-          </p>
-          <p className="overlay-sun">{sunRowText}</p>
         </div>
+      </div>
+
+      <div className="panel-right">
+        <section className="panel-section panel-section-weather">
+          <div className="panel-section-inner">
+            <div className="weather-hero">
+              <p className="panel-temp">{tempDisplay}°</p>
+              <div className="weather-meta">
+                <p className="weather-condition">{weather?.condition_text || '—'}</p>
+                <p className="weather-feels">Feels like {feelsDisplay}°</p>
+              </div>
+            </div>
+            <div className="weather-stats-grid">
+              <div>
+                <p className="weather-stat-label">Wind</p>
+                <p className="weather-stat-value">{windLabel}</p>
+              </div>
+              <div>
+                <p className="weather-stat-label">Humidity</p>
+                <p className="weather-stat-value">
+                  {weather?.humidity != null ? `${Math.round(weather.humidity)}%` : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="weather-stat-label">UV Index</p>
+                <p className="weather-stat-value" style={{ color: uvColor }}>
+                  {uvRowText}
+                </p>
+              </div>
+              <div>
+                <p className="weather-stat-label">Rain</p>
+                <p className="weather-stat-value">{rainLabelText}</p>
+              </div>
+            </div>
+            {rainSummary ? <p className="rain-summary">{rainSummary}</p> : null}
+            <div className="panel-forecast-wrap">{renderPanelForecast(forecastSlots)}</div>
+            <div className="sun-row">
+              <span>
+                <span className="sun-label">Sunrise </span>
+                <span className="sun-value">{sunriseDisplay}</span>
+              </span>
+              <span>
+                <span className="sun-label">Sunset </span>
+                <span className="sun-value">{sunsetDisplay}</span>
+              </span>
+            </div>
+          </div>
+        </section>
+
+        <section className="panel-section">
+          <div className="panel-section-inner">
+            <p className="panel-section-header">Pro Shop &amp; Dining</p>
+            {PRO_SHOP_ROWS.map((row) => (
+              <div key={row.label} className="panel-row">
+                <span className="panel-row-label">{row.label}</span>
+                <span
+                  className={`panel-row-value${row.highlight ? ' panel-row-value-highlight' : ''}`}
+                >
+                  {row.value}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel-section">
+          <div className="panel-section-inner community-list">
+            <p className="panel-section-header">Community</p>
+            {COMMUNITY_ITEMS.map((item) => (
+              <div key={item.type} className="community-item">
+                <p className="community-type">{item.type}</p>
+                <p className="community-name">{item.name}</p>
+                <p className="community-detail">{item.detail}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   )

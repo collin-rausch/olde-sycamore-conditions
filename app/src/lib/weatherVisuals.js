@@ -55,11 +55,11 @@
  * @property {{ cloudDrift: number, rainVariance: number, hazeBreath: number, gustPulse: number, lightFlicker: number }} temporalNoise
  */
 
-/** Charlotte latitude (degrees). */
-export const CHARLOTTE_LAT = 35.2271
+/** Olde Sycamore Golf Plantation latitude (degrees). */
+export const CHARLOTTE_LAT = 35.1653
 
-/** Charlotte longitude (degrees). */
-export const CHARLOTTE_LON = -80.8431
+/** Olde Sycamore Golf Plantation longitude (degrees). */
+export const CHARLOTTE_LON = -80.6093
 
 const TIMEZONE = 'America/New_York'
 

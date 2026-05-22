@@ -36,4 +36,4 @@ CREATE POLICY "Allow service role full access on weather_cache"
   WITH CHECK (true);
 
 COMMENT ON TABLE public.weather_cache IS 
-  'Latest weather snapshot from Open-Meteo for Olde Sycamore Golf Club, Charlotte NC (35.2271, -80.8431). Refreshed every 10 minutes via Edge Function cron job.';
+  'Latest weather snapshot from Open-Meteo for Olde Sycamore Golf Plantation (35.1653, -80.6093). Refreshed every 10 minutes via Edge Function cron job.';
