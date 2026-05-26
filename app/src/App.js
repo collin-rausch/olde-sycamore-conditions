@@ -4,7 +4,7 @@ import Editor from './routes/Editor'
 import Admin from './routes/Admin'
 
 function getPageTitle(pathname) {
-  if (pathname.includes('/admin')) return 'Morning Setup · Olde Sycamore'
+  if (pathname.includes('/admin')) return 'Admin · Olde Sycamore'
   if (pathname.includes('/editor')) return 'Editor · Olde Sycamore'
   return 'Olde Sycamore Golf Club'
 }
