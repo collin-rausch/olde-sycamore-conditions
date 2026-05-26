@@ -128,6 +128,102 @@ const DEMO_PRO_LEADERBOARD = {
   ],
 }
 
+const PANEL_BG_PRESETS = {
+  dark_green: 'rgba(6,14,8,0.82)',
+  dark_navy: 'rgba(6,12,24,0.82)',
+  dark_charcoal: 'rgba(18,18,18,0.82)',
+}
+
+const SLOT_TOGGLE_KEYS = {
+  [SLOT_IDS.TOURNAMENT]: 'tournament',
+  [SLOT_IDS.PRO]: 'pgaTour',
+  [SLOT_IDS.NOTICE]: 'courseNotice',
+  [SLOT_IDS.TIPS]: 'courseTips',
+}
+
+function parseJsonField(val, fallback) {
+  if (val == null) return fallback
+  if (typeof val === 'object') return val
+  try {
+    return JSON.parse(val)
+  } catch {
+    return fallback
+  }
+}
+
+function normalizeClubSettingsRow(row) {
+  if (!row) return null
+  return {
+    club_tagline: row.club_tagline,
+    show_tagline: row.show_tagline,
+    logo_url: row.logo_url,
+    bg_photo_url: row.bg_photo_url,
+    accent_color: row.accent_color,
+    panel_bg: row.panel_bg,
+    panel_bg_custom: row.panel_bg_custom,
+    pro_shop_title: row.pro_shop_title,
+    pro_shop_rows: parseJsonField(row.pro_shop_rows, []),
+    community_items: parseJsonField(row.community_items, {}),
+    tournament_data: parseJsonField(row.tournament_data, null),
+    display_slots: parseJsonField(row.display_slots, null),
+  }
+}
+
+function resolvePanelBackground(panelBg, panelBgCustom) {
+  if (panelBg === 'custom') return panelBgCustom || PANEL_BG_PRESETS.dark_green
+  return PANEL_BG_PRESETS[panelBg] || PANEL_BG_PRESETS.dark_green
+}
+
+function parseTournamentScore(score) {
+  const s = String(score ?? '').trim()
+  if (s === 'E' || s === 'e') return 0
+  if (s.startsWith('-')) return parseInt(s, 10) || 0
+  if (s.startsWith('+')) return parseInt(s.slice(1), 10) || 0
+  const n = parseInt(s, 10)
+  return Number.isFinite(n) ? n : 0
+}
+
+function buildTournamentLeaderboard(td) {
+  if (!td?.rows?.length) return DEMO_CLUB_LEADERBOARD
+  const rows = td.rows
+    .filter((r) => r.enabled !== false)
+    .map((r) => ({
+      position: r.position,
+      name: r.name,
+      score: parseTournamentScore(r.score),
+      thru: r.thru,
+    }))
+  if (!rows.length) return DEMO_CLUB_LEADERBOARD
+  return {
+    title: `${td.name || 'Tournament'} · ${td.round || 'Round 2'}`,
+    rows,
+  }
+}
+
+function buildCommunityDisplay(communityItems) {
+  const items = []
+  const achievements = (communityItems?.achievements || []).filter((a) => a.enabled !== false)
+  achievements.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+  for (const a of achievements.slice(0, 5)) {
+    items.push({
+      key: a.id,
+      type: String(a.type || 'ACHIEVEMENT').toUpperCase(),
+      name: a.name,
+      detail: a.detail,
+    })
+  }
+  const events = (communityItems?.events || []).filter((e) => e.enabled !== false)
+  for (const e of events.slice(0, 3)) {
+    items.push({
+      key: e.id,
+      type: 'UPCOMING',
+      name: e.name,
+      detail: e.detail,
+    })
+  }
+  return items.length ? items : COMMUNITY_ITEMS.map((item, i) => ({ ...item, key: `default-${i}` }))
+}
+
 function formatGreensSpeed(val) {
   const n = Number(val)
   if (!Number.isFinite(n)) return '—'
@@ -646,10 +742,10 @@ function renderGolferTips(tips) {
   )
 }
 
-function renderCardSlot(slotId, { tipsForCard, courseNotice }) {
+function renderCardSlot(slotId, { tipsForCard, courseNotice, tournamentLeaderboard }) {
   switch (slotId) {
     case SLOT_IDS.TOURNAMENT:
-      return renderClubTournament(DEMO_CLUB_LEADERBOARD)
+      return renderClubTournament(tournamentLeaderboard)
     case SLOT_IDS.PRO:
       return renderProLeaderboard(DEMO_PRO_LEADERBOARD)
     case SLOT_IDS.NOTICE:
@@ -664,6 +760,7 @@ function renderCardSlot(slotId, { tipsForCard, courseNotice }) {
 export default function Player() {
   const [weather, setWeather] = useState(null)
   const [courseStatus, setCourseStatus] = useState(null)
+  const [clubSettings, setClubSettings] = useState(null)
   const [error, setError] = useState(null)
   const [started, setStarted] = useState(false)
   const [clock, setClock] = useState(() => new Date())
@@ -796,6 +893,46 @@ export default function Player() {
   }, [])
 
   useEffect(() => {
+    let subscription
+    let cancelled = false
+
+    async function loadClubSettings() {
+      const { data, error: fetchError } = await supabase
+        .from('club_settings')
+        .select('*')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (cancelled) return
+      if (fetchError) {
+        console.warn('[Player] club_settings load failed:', fetchError.message)
+        return
+      }
+      setClubSettings(normalizeClubSettingsRow(data))
+    }
+
+    loadClubSettings()
+
+    subscription = supabase
+      .channel('player-club-settings')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'club_settings' },
+        (payload) => {
+          if (payload.eventType === 'DELETE') return
+          setClubSettings(normalizeClubSettingsRow(payload.new))
+        },
+      )
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      subscription?.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
     const tick = setInterval(() => setClock(new Date()), 1000)
     return () => clearInterval(tick)
   }, [])
@@ -810,11 +947,53 @@ export default function Player() {
 
   const courseNotice = courseStatus?.daily_note?.trim() || ''
 
-  const activeSlots = useMemo(
-    () =>
-      ALL_SLOT_DEFS.filter((s) => !s.requiresNotice || courseNotice),
-    [courseNotice],
+  const accentColor = clubSettings?.accent_color || '#7ab648'
+  const panelBgColor = resolvePanelBackground(
+    clubSettings?.panel_bg,
+    clubSettings?.panel_bg_custom,
   )
+  const logoUrl = clubSettings?.logo_url || LOGO_URL
+  const coursePhotoUrl = clubSettings?.bg_photo_url || COURSE_PHOTO_URL
+  const showTagline = clubSettings?.show_tagline !== false
+  const clubTagline = clubSettings?.club_tagline || '18 holes · Est. 1997'
+
+  const tournamentLeaderboard = useMemo(
+    () => buildTournamentLeaderboard(clubSettings?.tournament_data),
+    [clubSettings?.tournament_data],
+  )
+
+  const proShopRows = useMemo(() => {
+    const rows = clubSettings?.pro_shop_rows
+    if (!rows?.length) return PRO_SHOP_ROWS
+    const enabled = rows.filter((r) => r.enabled !== false)
+    if (!enabled.length) return PRO_SHOP_ROWS
+    return enabled.map((r) => ({
+      label: r.label,
+      value: r.value,
+      highlight: r.highlight,
+    }))
+  }, [clubSettings?.pro_shop_rows])
+
+  const proShopTitle = clubSettings?.pro_shop_title || 'Pro Shop & Dining'
+
+  const communityItems = useMemo(
+    () => buildCommunityDisplay(clubSettings?.community_items),
+    [clubSettings?.community_items],
+  )
+
+  const showPanelWeather = clubSettings?.display_slots?.panel?.weather !== false
+  const showPanelProShop = clubSettings?.display_slots?.panel?.proShop !== false
+  const showPanelCommunity = clubSettings?.display_slots?.panel?.community !== false
+
+  const activeSlots = useMemo(() => {
+    const center = clubSettings?.display_slots?.center
+    return ALL_SLOT_DEFS.filter((s) => {
+      const toggleKey = SLOT_TOGGLE_KEYS[s.id]
+      if (toggleKey && center && center[toggleKey] === false) return false
+      if (s.requiresNotice && !courseNotice) return false
+      return true
+    })
+  }, [clubSettings?.display_slots, courseNotice])
 
   useEffect(() => {
     setActiveSlotIndex(0)
@@ -954,8 +1133,12 @@ export default function Player() {
     activeSlots[activeSlotIndex % activeSlots.length] ?? activeSlots[0]
 
 
+  const playerRootStyle = {
+    '--os-green-label': accentColor,
+  }
+
   return (
-    <div className="player-root">
+    <div className="player-root" style={playerRootStyle}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
 
@@ -1436,7 +1619,7 @@ export default function Player() {
       <div className="left-zone">
         <img
           className="scene-photo"
-          src={COURSE_PHOTO_URL}
+          src={coursePhotoUrl}
           alt=""
           aria-hidden="true"
           style={{ filter: photoFilter }}
@@ -1462,8 +1645,8 @@ export default function Player() {
 
         <div className="left-ui">
           <div className="overlay-top-left">
-            <img className="overlay-logo" src={LOGO_URL} alt="Olde Sycamore Golf Club" />
-            <p className="overlay-tagline">18 holes · Est. 1997</p>
+            <img className="overlay-logo" src={logoUrl} alt="Olde Sycamore Golf Club" />
+            {showTagline ? <p className="overlay-tagline">{clubTagline}</p> : null}
           </div>
 
           <div className="overlay-status-top">
@@ -1501,7 +1684,11 @@ export default function Player() {
                 <span>{currentSlot.label}</span>
               </div>
               <div className="card-content" style={{ opacity: cardFade }}>
-                {renderCardSlot(currentSlot.id, { tipsForCard, courseNotice })}
+                {renderCardSlot(currentSlot.id, {
+                  tipsForCard,
+                  courseNotice,
+                  tournamentLeaderboard,
+                })}
               </div>
             </div>
           )}
@@ -1509,7 +1696,8 @@ export default function Player() {
         </div>
       </div>
 
-      <div className="panel-right">
+      <div className="panel-right" style={{ background: panelBgColor }}>
+        {showPanelWeather ? (
         <section className="panel-section panel-section-weather">
           <div className="panel-section-inner">
             <div className="weather-hero">
@@ -1555,11 +1743,13 @@ export default function Player() {
             </div>
           </div>
         </section>
+        ) : null}
 
+        {showPanelProShop ? (
         <section className="panel-section">
           <div className="panel-section-inner">
-            <p className="panel-section-header">Pro Shop &amp; Dining</p>
-            {PRO_SHOP_ROWS.map((row) => (
+            <p className="panel-section-header">{proShopTitle}</p>
+            {proShopRows.map((row) => (
               <div key={row.label} className="panel-row">
                 <span className="panel-row-label">{row.label}</span>
                 <span
@@ -1571,12 +1761,14 @@ export default function Player() {
             ))}
           </div>
         </section>
+        ) : null}
 
+        {showPanelCommunity ? (
         <section className="panel-section">
           <div className="panel-section-inner community-list">
             <p className="panel-section-header">Community</p>
-            {COMMUNITY_ITEMS.map((item) => (
-              <div key={item.type} className="community-item">
+            {communityItems.map((item) => (
+              <div key={item.key} className="community-item">
                 <p className="community-type">{item.type}</p>
                 <p className="community-name">{item.name}</p>
                 <p className="community-detail">{item.detail}</p>
@@ -1584,6 +1776,7 @@ export default function Player() {
             ))}
           </div>
         </section>
+        ) : null}
       </div>
     </div>
   )

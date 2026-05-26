@@ -1,9 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabaseClient'
 
-const TABLER_ICONS_URL =
-  'https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/dist/tabler-icons.min.css'
-
 const DEFAULT_LOGO_URL =
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png'
 
@@ -43,12 +40,12 @@ const ACHIEVEMENT_TYPES = [
 ]
 
 const NAV_ITEMS = [
-  { id: 'club', icon: 'ti-building', title: 'Club settings', subtitle: 'Logo, tagline & location' },
-  { id: 'conditions', icon: 'ti-flag', title: 'Course conditions', subtitle: 'Status, greens & daily note' },
-  { id: 'slots', icon: 'ti-layout', title: 'Display slots', subtitle: 'Center card & right panel', dividerBefore: true },
-  { id: 'proshop', icon: 'ti-tools-kitchen-2', title: 'Pro shop & dining', subtitle: 'Hours & specials' },
-  { id: 'community', icon: 'ti-users', title: 'Community', subtitle: 'Leaderboard & achievements' },
-  { id: 'branding', icon: 'ti-palette', title: 'Branding', subtitle: 'Colors & background photo' },
+  { id: 'club', icon: 'building', title: 'Club settings', subtitle: 'Logo, tagline & location' },
+  { id: 'conditions', icon: 'flag', title: 'Course conditions', subtitle: 'Status, greens & daily note' },
+  { id: 'slots', icon: 'layout', title: 'Display slots', subtitle: 'Center card & right panel', dividerBefore: true },
+  { id: 'proshop', icon: 'tools-kitchen-2', title: 'Pro shop & dining', subtitle: 'Hours & specials' },
+  { id: 'community', icon: 'users', title: 'Community', subtitle: 'Leaderboard & achievements' },
+  { id: 'branding', icon: 'palette', title: 'Branding', subtitle: 'Colors & background photo' },
 ]
 
 const CENTER_SLOT_TOGGLES = [
@@ -284,7 +281,8 @@ function getFirstCenterSlotLabel(displaySlots, dailyNote) {
 }
 
 function TablerIcon({ name, style }) {
-  return <i className={`ti ${name}`} style={style} aria-hidden="true" />
+  const iconClass = name.startsWith('ti-') ? name : `ti-${name}`
+  return <i className={`ti ${iconClass}`} style={style} aria-hidden="true" />
 }
 
 function SubHeader({ children }) {
@@ -378,6 +376,7 @@ function MiniPreview({ club, course }) {
 
   return (
     <div style={S.miniOuter}>
+      <div style={S.miniScaleBox}>
       <div style={S.miniScreen}>
         <div style={S.miniLeft}>
           <img src={club.bg_photo_url || DEFAULT_BG_URL} alt="" style={S.miniPhoto} />
@@ -465,13 +464,14 @@ function MiniPreview({ club, course }) {
           </div>
         ) : null}
       </div>
+      </div>
     </div>
   )
 }
 
 export default function Admin() {
   const [activeSection, setActiveSection] = useState('club')
-  const [settingsId, setSettingsId] = useState(null)
+  const [settingsRowId, setSettingsRowId] = useState(null)
   const [courseRowId, setCourseRowId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
@@ -503,10 +503,19 @@ export default function Admin() {
     setLoading(true)
     setLoadError(null)
 
-    const [settingsRes, courseRes] = await Promise.all([
-      supabase.from('club_settings').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('course_status').select('*').order('updated_at', { ascending: false }).limit(1).maybeSingle(),
-    ])
+    const settingsRes = await supabase
+      .from('club_settings')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const courseRes = await supabase
+      .from('course_status')
+      .select('*')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
     if (settingsRes.error) {
       setLoadError(settingsRes.error.message)
@@ -516,7 +525,7 @@ export default function Admin() {
 
     if (settingsRes.data) {
       const row = settingsRes.data
-      setSettingsId(row.id)
+      setSettingsRowId(row.id)
       setClub({
         club_tagline: row.club_tagline ?? defaultClubSettings().club_tagline,
         show_tagline: row.show_tagline ?? true,
@@ -568,16 +577,6 @@ export default function Admin() {
   }, [])
 
   useEffect(() => {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = TABLER_ICONS_URL
-    document.head.appendChild(link)
-    return () => {
-      if (link.parentNode) link.parentNode.removeChild(link)
-    }
-  }, [])
-
-  useEffect(() => {
     loadData()
   }, [loadData])
 
@@ -622,23 +621,16 @@ export default function Admin() {
         if (!latitude || !longitude) {
           throw geoErr
         }
+        console.warn('[Admin] Geocode failed, using saved coordinates:', geoErr)
       }
 
       let logoUrl = club.logo_url
       let bgUrl = club.bg_photo_url
       if (logoFile) {
-        try {
-          logoUrl = await uploadToAssets(logoFile, 'logo')
-        } catch (e) {
-          console.warn('Logo upload failed, keeping previous URL', e)
-        }
+        logoUrl = await uploadToAssets(logoFile, 'logo')
       }
       if (bgFile) {
-        try {
-          bgUrl = await uploadToAssets(bgFile, 'course-bg')
-        } catch (e) {
-          console.warn('Background upload failed, keeping previous URL', e)
-        }
+        bgUrl = await uploadToAssets(bgFile, 'course-bg')
       }
 
       const settingsPayload = {
@@ -660,38 +652,112 @@ export default function Admin() {
         updated_at: new Date().toISOString(),
       }
 
-      if (settingsId) {
-        const { error } = await supabase.from('club_settings').update(settingsPayload).eq('id', settingsId)
-        if (error) throw error
-      } else {
-        const { data, error } = await supabase.from('club_settings').insert(settingsPayload).select('id').single()
-        if (error) throw error
-        setSettingsId(data.id)
+      const coursePayload = {
+        course_status: course.course_status,
+        cart_rule: course.cart_rule,
+        greens_speed: parseGreensSpeed(course.greens_speed),
+        fairway_condition: course.fairway_condition,
+        bunker_condition: course.bunker_condition,
+        daily_note: course.daily_note.trim().slice(0, 120),
+        updated_at: new Date().toISOString(),
       }
 
+      console.log('[Admin] Publishing club_settings:', settingsPayload)
+      console.log('[Admin] Publishing course_status:', coursePayload)
+
+      const { data: existingSettings, error: settingsLookupError } = await supabase
+        .from('club_settings')
+        .select('id')
+        .limit(1)
+        .maybeSingle()
+
+      if (settingsLookupError) {
+        console.error('[Admin] club_settings lookup failed:', settingsLookupError)
+        throw new Error(`club_settings lookup: ${settingsLookupError.message}`)
+      }
+
+      const settingsId = existingSettings?.id ?? settingsRowId
+      let settingsData
+      let settingsError
+
+      if (settingsId) {
+        console.log('[Admin] Updating club_settings id:', settingsId)
+        const result = await supabase
+          .from('club_settings')
+          .update(settingsPayload)
+          .eq('id', settingsId)
+          .select()
+          .single()
+        settingsData = result.data
+        settingsError = result.error
+      } else {
+        console.log('[Admin] Inserting new club_settings row')
+        const result = await supabase
+          .from('club_settings')
+          .insert(settingsPayload)
+          .select()
+          .single()
+        settingsData = result.data
+        settingsError = result.error
+      }
+
+      if (settingsError) {
+        console.error('[Admin] club_settings save failed:', settingsError)
+        throw new Error(`club_settings: ${settingsError.message}`)
+      }
+      console.log('[Admin] club_settings saved:', settingsData)
+      if (settingsData?.id) setSettingsRowId(settingsData.id)
+
+      const { data: existingCourse, error: courseLookupError } = await supabase
+        .from('course_status')
+        .select('id')
+        .limit(1)
+        .maybeSingle()
+
+      if (courseLookupError) {
+        console.error('[Admin] course_status lookup failed:', courseLookupError)
+        throw new Error(`course_status lookup: ${courseLookupError.message}`)
+      }
+
+      const courseId = existingCourse?.id ?? courseRowId
+      let courseData
+      let courseError
+
+      if (courseId) {
+        console.log('[Admin] Updating course_status id:', courseId)
+        const result = await supabase
+          .from('course_status')
+          .update(coursePayload)
+          .eq('id', courseId)
+          .select()
+          .single()
+        courseData = result.data
+        courseError = result.error
+      } else {
+        console.log('[Admin] Inserting new course_status row')
+        const result = await supabase
+          .from('course_status')
+          .insert(coursePayload)
+          .select()
+          .single()
+        courseData = result.data
+        courseError = result.error
+      }
+
+      if (courseError) {
+        console.error('[Admin] course_status save failed:', courseError)
+        throw new Error(`course_status: ${courseError.message}`)
+      }
+      console.log('[Admin] course_status saved:', courseData)
+      if (courseData?.id) setCourseRowId(courseData.id)
       updateClub({ latitude, longitude, logo_url: logoUrl, bg_photo_url: bgUrl })
       setLogoFile(null)
       setBgFile(null)
-
-      if (courseRowId) {
-        const { error: courseError } = await supabase
-          .from('course_status')
-          .update({
-            course_status: course.course_status,
-            cart_rule: course.cart_rule,
-            greens_speed: parseGreensSpeed(course.greens_speed),
-            fairway_condition: course.fairway_condition,
-            bunker_condition: course.bunker_condition,
-            daily_note: course.daily_note.trim().slice(0, 120),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', courseRowId)
-        if (courseError) throw courseError
-      }
-
       setPublished(true)
     } catch (err) {
-      setPublishError(err?.message || String(err))
+      const message = err?.message || String(err)
+      console.error('[Admin] Publish failed:', err)
+      setPublishError(message)
     } finally {
       setPublishing(false)
     }
@@ -1291,7 +1357,7 @@ export default function Admin() {
               onClick={() => setActiveSection(item.id)}
               title={item.title}
             >
-              <TablerIcon name={item.icon} />
+              <i className={`ti ti-${item.icon}`} aria-hidden="true" />
             </button>
           </React.Fragment>
         ))}
@@ -1323,7 +1389,11 @@ export default function Admin() {
             {publishLabel}
           </button>
         </footer>
-        {publishError ? <p style={{ ...S.error, padding: '0 14px 10px', margin: 0 }}>{publishError}</p> : null}
+        {publishError ? (
+          <p style={S.publishError} role="alert">
+            Publish failed: {publishError}
+          </p>
+        ) : null}
       </aside>
 
       <main style={S.previewPanel}>
@@ -1335,7 +1405,9 @@ export default function Admin() {
           <span style={S.previewClubName}>{CLUB_DISPLAY_NAME}</span>
         </div>
         <div style={S.previewFrame}>
-          <MiniPreview club={club} course={course} />
+          <div style={S.previewFrameInner}>
+            <MiniPreview club={club} course={course} />
+          </div>
         </div>
       </main>
     </div>
@@ -1455,7 +1527,17 @@ const S = {
   previewClubName: { fontSize: 11, color: 'rgba(255,255,255,0.28)' },
   previewFrame: {
     flex: 1,
+    width: '100%',
     padding: 16,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 0,
+    overflow: 'hidden',
+  },
+  previewFrameInner: {
+    width: '100%',
+    height: '100%',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1622,7 +1704,30 @@ const S = {
   bgPreview: { width: '100%', height: '100%', objectFit: 'cover' },
   loading: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
   error: { color: '#f87171', fontSize: 11 },
-  miniOuter: { width: '100%', maxWidth: 720, aspectRatio: '16 / 9' },
+  publishError: {
+    margin: 0,
+    padding: '8px 14px 12px',
+    fontSize: 11,
+    lineHeight: 1.4,
+    color: '#fca5a5',
+    background: 'rgba(127,29,29,0.35)',
+    borderTop: '0.5px solid rgba(248,113,113,0.25)',
+  },
+  miniOuter: {
+    width: '100%',
+    maxHeight: '100%',
+    aspectRatio: '16 / 9',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  miniScaleBox: {
+    width: `${(100 / 1.8).toFixed(2)}%`,
+    height: `${(100 / 1.8).toFixed(2)}%`,
+    transform: 'scale(1.8)',
+    transformOrigin: 'center center',
+  },
   miniScreen: {
     width: '100%',
     height: '100%',
