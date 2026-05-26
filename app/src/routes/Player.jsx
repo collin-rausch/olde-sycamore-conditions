@@ -1026,7 +1026,7 @@ export default function Player() {
   const proShopTitle = clubSettings?.pro_shop_title || 'Pro Shop & Dining'
 
   const communityItems = useMemo(
-    () => buildCommunityDisplay(clubSettings?.community_items),
+    () => buildCommunityDisplay(clubSettings?.community_items).slice(0, 3),
     [clubSettings?.community_items],
   )
 
@@ -1476,8 +1476,8 @@ export default function Player() {
           position: absolute;
           top: 0;
           right: 0;
-          bottom: 0;
           width: 28%;
+          height: 100vh;
           background: rgba(6, 14, 8, 0.82);
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
@@ -1494,8 +1494,12 @@ export default function Player() {
           min-height: 0;
           display: flex;
           flex-direction: column;
-          padding: clamp(6px, 0.9vh, 9px) clamp(7.5px, 0.975vw, 10.5px);
+          padding: clamp(6px, 1vh, 10px) clamp(10px, 1.3vw, 14px);
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+          overflow: hidden;
+        }
+
+        .panel-section-community {
           overflow: hidden;
         }
 
@@ -1637,20 +1641,23 @@ export default function Player() {
         .community-list {
           display: flex;
           flex-direction: column;
-          justify-content: space-evenly;
+          justify-content: flex-start;
           flex: 1;
           min-height: 0;
+          overflow: hidden;
         }
 
         .community-item {
-          padding: clamp(3px, 0.5vh, 4.5px) 0;
+          flex-shrink: 1;
+          min-height: 0;
+          padding: clamp(3px, 0.5vh, 5px) 0;
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
         }
 
         .community-item:last-child { border-bottom: none; }
-        .community-type { margin: 0; font-size: clamp(7.5px, 0.85vw, 9.5px); color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
+        .community-type { margin: 0; font-size: 8px; color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
         .community-name { margin: 2px 0 0; font-size: clamp(10px, 1.1vw, 12px); font-weight: 500; color: var(--os-white); line-height: 1.15; }
-        .community-detail { margin: 2px 0 0; font-size: clamp(8.5px, 0.94vw, 10px); color: var(--os-white-80); line-height: 1.2; }
+        .community-detail { margin: 2px 0 0; font-size: clamp(9px, 1vw, 11px); color: var(--os-white-80); line-height: 1.2; }
 
         .player-error {
           position: fixed;
@@ -1816,7 +1823,7 @@ export default function Player() {
         ) : null}
 
         {showPanelCommunity ? (
-        <section className="panel-section">
+        <section className="panel-section panel-section-community">
           <div className="panel-section-inner community-list">
             <p className="panel-section-header">Community</p>
             {communityItems.map((item) => (
