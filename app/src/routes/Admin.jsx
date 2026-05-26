@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import PlayerScaledPreview from '../components/PlayerScaledPreview'
 import { supabase } from '../lib/supabaseClient'
 
 const DEFAULT_LOGO_URL =
@@ -146,7 +147,7 @@ function defaultClubSettings() {
     logo_url: DEFAULT_LOGO_URL,
     accent_color: '#7ab648',
     panel_bg: 'dark_green',
-    panel_bg_custom: 'rgba(6,14,8,0.82)',
+    panel_bg_custom: '#0a1a0a',
     bg_photo_url: DEFAULT_BG_URL,
     pro_shop_title: 'Pro Shop & Dining',
     pro_shop_rows: defaultProShopRows(),
@@ -237,47 +238,11 @@ function getStatusButtonStyle(status, active) {
   return map[status] || map.Open
 }
 
-function getPreviewStatusStyle(status) {
-  const s = (status || 'Open').toLowerCase()
-  if (s.includes('closed')) return { background: 'rgba(127,29,29,0.82)', color: '#f87171' }
-  if (s.includes('frost') || s.includes('rain')) return { background: 'rgba(29,78,216,0.72)', color: '#93c5fd' }
-  if (s.includes('maintenance') || s.includes('back 9') || s.includes('front 9')) {
-    return { background: 'rgba(120,53,15,0.72)', color: '#fbbf24' }
+function normalizeHexColor(value, fallback) {
+  if (typeof value === 'string' && /^#[0-9A-Fa-f]{6}$/.test(value.trim())) {
+    return value.trim()
   }
-  return { background: 'rgba(16,68,36,0.82)', color: '#4ade80' }
-}
-
-function getPreviewStatusLabel(status) {
-  const s = (status || 'Open').toUpperCase()
-  if (s.includes('FROST')) return 'FROST DELAY'
-  if (s.includes('RAIN')) return 'RAIN DELAY'
-  if (s.includes('MAINTENANCE')) return 'MAINTENANCE'
-  if (s.includes('BACK 9')) return 'BACK 9 ONLY'
-  if (s.includes('FRONT 9')) return 'FRONT 9 ONLY'
-  if (s.includes('CLOSED')) return 'CLOSED'
-  return 'OPEN'
-}
-
-function resolvePanelBg(panelBg, panelBgCustom) {
-  if (panelBg === 'custom') return panelBgCustom || PANEL_BG_PRESETS.dark_green
-  return PANEL_BG_PRESETS[panelBg] || PANEL_BG_PRESETS.dark_green
-}
-
-function getFirstCenterSlotLabel(displaySlots, dailyNote) {
-  const c = displaySlots?.center || {}
-  const order = [
-    ['tournament', 'Club tournament'],
-    ['memberSpotlight', 'Member spotlight'],
-    ['pgaTour', 'PGA Tour · live'],
-    ['courseNotice', 'Course notice'],
-    ['courseTips', 'Course tips'],
-  ]
-  for (const [key, label] of order) {
-    if (!c[key]) continue
-    if (key === 'courseNotice' && !dailyNote?.trim()) continue
-    return label
-  }
-  return 'Course tips'
+  return fallback
 }
 
 function TablerIcon({ name, style }) {
@@ -347,6 +312,31 @@ function Toggle({ on, onChange }) {
   )
 }
 
+function ColorPickerField({ value, onChange, fallback = '#7ab648', placeholder }) {
+  const hex = normalizeHexColor(value, fallback)
+
+  return (
+    <div style={S.colorRow}>
+      <label style={S.colorSwatchLabel}>
+        <span style={{ ...S.admColorSwatch, background: hex }} aria-hidden="true" />
+        <input
+          type="color"
+          value={hex}
+          onChange={(e) => onChange(e.target.value)}
+          style={S.colorSwatchInput}
+          aria-label="Pick color"
+        />
+      </label>
+      <TextInput
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder || fallback}
+        style={{ flex: 1 }}
+      />
+    </div>
+  )
+}
+
 function ToggleRow({ label, description, on, onChange }) {
   return (
     <div style={S.toggleRow}>
@@ -359,112 +349,142 @@ function ToggleRow({ label, description, on, onChange }) {
   )
 }
 
-function MiniPreview({ club, course }) {
-  const accent = club.accent_color || '#7ab648'
-  const panelBg = resolvePanelBg(club.panel_bg, club.panel_bg_custom)
-  const proRows = (club.pro_shop_rows || []).filter((r) => r.enabled)
-  const achievements = (club.community_items?.achievements || [])
-    .filter((a) => a.enabled)
-    .slice(0, 3)
-  const events = (club.community_items?.events || []).filter((e) => e.enabled).slice(0, 2)
-  const showWeather = club.display_slots?.panel?.weather !== false
-  const showProShop = club.display_slots?.panel?.proShop !== false
-  const showCommunity = club.display_slots?.panel?.community !== false
-  const slotLabel = getFirstCenterSlotLabel(club.display_slots, course.daily_note)
-  const statusStyle = getPreviewStatusStyle(course.course_status)
-  const greens = course.greens_speed || '11.2 ft'
+function formatLocationSuggestion(item) {
+  const address = item.address || {}
+  const city =
+    address.city || address.town || address.village || address.municipality || address.hamlet || ''
+  const state = address.state || address.region || ''
+  const country = address.country || ''
+  const label = [city, state].filter(Boolean).join(', ')
+  return {
+    key: String(item.place_id),
+    label: label || item.display_name,
+    sublabel: country,
+    lat: parseFloat(item.lat),
+    lon: parseFloat(item.lon),
+  }
+}
+
+function isCityResult(item) {
+  const address = item.address || {}
+  return Boolean(
+    address.city || address.town || address.village || address.municipality || address.hamlet,
+  )
+}
+
+function LocationAutocomplete({ value, onChange, onSelect }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [open, setOpen] = useState(false)
+  const [activeIndex, setActiveIndex] = useState(-1)
+  const wrapperRef = useRef(null)
+
+  useEffect(() => {
+    if (value.trim().length < 3) {
+      setSuggestions([])
+      setOpen(false)
+      return undefined
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const q = encodeURIComponent(value.trim())
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=5&addressdetails=1`,
+          { headers: { 'User-Agent': 'olde-sycamore-conditions-admin/1.0' } },
+        )
+        if (!res.ok) throw new Error('Location search failed')
+        const data = await res.json()
+        const cities = (Array.isArray(data) ? data : []).filter(isCityResult).slice(0, 5)
+        setSuggestions(cities.map(formatLocationSuggestion))
+        setOpen(cities.length > 0)
+        setActiveIndex(-1)
+      } catch {
+        setSuggestions([])
+        setOpen(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [value])
+
+  useEffect(() => {
+    function handlePointerDown(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [])
+
+  const pickSuggestion = (suggestion) => {
+    onChange(suggestion.label)
+    onSelect?.({
+      locationName: suggestion.label,
+      latitude: suggestion.lat,
+      longitude: suggestion.lon,
+    })
+    setOpen(false)
+    setSuggestions([])
+  }
 
   return (
-    <div style={S.miniOuter}>
-      <div style={S.miniScaleBox}>
-      <div style={S.miniScreen}>
-        <div style={S.miniLeft}>
-          <img src={club.bg_photo_url || DEFAULT_BG_URL} alt="" style={S.miniPhoto} />
-          <div style={S.miniLeftOverlay}>
-            <div style={S.miniLogoBlock}>
-              <img src={club.logo_url || DEFAULT_LOGO_URL} alt="" style={S.miniLogo} />
-              {club.show_tagline && club.club_tagline ? (
-                <p style={S.miniTagline}>{club.club_tagline}</p>
+    <div ref={wrapperRef} style={S.locationWrap}>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => {
+          if (suggestions.length > 0) setOpen(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            setOpen(false)
+            return
+          }
+          if (!open || suggestions.length === 0) return
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            setActiveIndex((i) => (i + 1) % suggestions.length)
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            setActiveIndex((i) => (i <= 0 ? suggestions.length - 1 : i - 1))
+          } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault()
+            pickSuggestion(suggestions[activeIndex])
+          }
+        }}
+        placeholder="e.g. Charlotte, NC"
+        className="adm-input"
+        style={{
+          ...S.input,
+          borderRadius: open ? '6px 6px 0 0' : 6,
+        }}
+        autoComplete="off"
+      />
+      {open && suggestions.length > 0 ? (
+        <div style={S.locationDropdown} role="listbox">
+          {suggestions.map((suggestion, i) => (
+            <button
+              key={suggestion.key}
+              type="button"
+              role="option"
+              aria-selected={i === activeIndex}
+              style={{
+                ...S.locationOption,
+                ...(i === activeIndex ? S.locationOptionHover : {}),
+              }}
+              onMouseEnter={() => setActiveIndex(i)}
+              onClick={() => pickSuggestion(suggestion)}
+            >
+              <span>{suggestion.label}</span>
+              {suggestion.sublabel ? (
+                <span style={S.locationOptionCountry}>{suggestion.sublabel}</span>
               ) : null}
-            </div>
-            <div style={{ ...S.miniStatusBadge, ...statusStyle }}>
-              {getPreviewStatusLabel(course.course_status)}
-            </div>
-            <div style={S.miniConditions}>
-              <div>
-                <p style={{ ...S.miniCondLabel, color: accent }}>Greens</p>
-                <p style={S.miniCondVal}>{greens}</p>
-              </div>
-              <div>
-                <p style={{ ...S.miniCondLabel, color: accent }}>Fairways</p>
-                <p style={S.miniCondVal}>{course.fairway_condition}</p>
-              </div>
-              <div>
-                <p style={{ ...S.miniCondLabel, color: accent }}>Bunkers</p>
-                <p style={S.miniCondVal}>{course.bunker_condition}</p>
-              </div>
-              <div>
-                <p style={{ ...S.miniCondLabel, color: accent }}>Cart</p>
-                <p style={S.miniCondVal}>{course.cart_rule}</p>
-              </div>
-            </div>
-            <div style={S.miniCenterCard}>
-              <p style={{ ...S.miniCardLabel, color: accent }}>{slotLabel}</p>
-              <p style={S.miniCardBody}>
-                {slotLabel.toLowerCase().includes('notice') && course.daily_note
-                  ? course.daily_note.slice(0, 60)
-                  : slotLabel.toLowerCase().includes('tournament')
-                    ? `${club.tournament_data?.name || 'Tournament'} · ${club.tournament_data?.round || 'Round 2'}`
-                    : 'Preview content'}
-              </p>
-            </div>
-          </div>
+            </button>
+          ))}
         </div>
-        {showWeather || showProShop || showCommunity ? (
-          <div style={{ ...S.miniRight, background: panelBg }}>
-            {showWeather ? (
-              <div style={S.miniPanelBlock}>
-                <p style={S.miniTemp}>68°</p>
-                <p style={S.miniWeatherSub}>Partly Cloudy · NE 10 mph</p>
-                <div style={S.miniForecast}>
-                  {['2 PM', '3 PM', '4 PM'].map((t) => (
-                    <span key={t} style={S.miniForecastCol}>
-                      {t}
-                      <br />
-                      70°
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            {showProShop ? (
-              <div style={S.miniPanelBlock}>
-                <p style={{ ...S.miniSectionTitle, color: accent }}>{club.pro_shop_title}</p>
-                {proRows.slice(0, 3).map((r) => (
-                  <div key={r.id} style={S.miniRow}>
-                    <span style={{ color: accent, fontSize: 5 }}>{r.label}</span>
-                    <span style={S.miniRowVal}>{r.value}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-            {showCommunity ? (
-              <div style={S.miniPanelBlock}>
-                <p style={{ ...S.miniSectionTitle, color: accent }}>Community</p>
-                {[...achievements, ...events].slice(0, 2).map((item) => (
-                  <div key={item.id} style={{ marginTop: 3 }}>
-                    <p style={{ fontSize: 4, color: accent, margin: 0, letterSpacing: 0.5 }}>
-                      {item.type ? achievementTypeLabel(item.type) : 'UPCOMING'}
-                    </p>
-                    <p style={{ fontSize: 5, color: '#fff', margin: '1px 0 0' }}>{item.name}</p>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-      </div>
+      ) : null}
     </div>
   )
 }
@@ -535,7 +555,7 @@ export default function Admin() {
         logo_url: row.logo_url ?? DEFAULT_LOGO_URL,
         accent_color: row.accent_color ?? '#7ab648',
         panel_bg: row.panel_bg ?? 'dark_green',
-        panel_bg_custom: row.panel_bg_custom ?? PANEL_BG_PRESETS.dark_green,
+        panel_bg_custom: row.panel_bg_custom ?? '#0a1a0a',
         bg_photo_url: row.bg_photo_url ?? DEFAULT_BG_URL,
         pro_shop_title: row.pro_shop_title ?? 'Pro Shop & Dining',
         pro_shop_rows: parseJson(row.pro_shop_rows, defaultProShopRows()),
@@ -830,10 +850,16 @@ export default function Admin() {
       />
       <SubHeader>Location</SubHeader>
       <FieldLabel>City, State</FieldLabel>
-      <TextInput
+      <LocationAutocomplete
         value={club.location_name}
         onChange={(v) => updateClub({ location_name: v })}
-        placeholder="e.g. Charlotte, NC"
+        onSelect={({ locationName, latitude, longitude }) =>
+          updateClub({
+            location_name: locationName,
+            latitude,
+            longitude,
+          })
+        }
       />
       <p style={S.hint}>
         We&apos;ll look up coordinates automatically for weather data and sunrise/sunset times
@@ -1230,26 +1256,26 @@ export default function Admin() {
     <>
       <SubHeader>Colors</SubHeader>
       <FieldLabel>Label accent color</FieldLabel>
-      <div style={S.colorRow}>
-        <label style={{ cursor: 'pointer' }}>
-          <input
-            type="color"
-            value={club.accent_color}
-            onChange={(e) => updateClub({ accent_color: e.target.value })}
-            style={S.colorSwatch}
-          />
-        </label>
-        <TextInput
-          value={club.accent_color}
-          onChange={(v) => updateClub({ accent_color: v })}
-          placeholder="#7ab648"
-          style={{ flex: 1 }}
-        />
-      </div>
+      <ColorPickerField
+        value={club.accent_color}
+        onChange={(v) => updateClub({ accent_color: v })}
+        fallback="#7ab648"
+        placeholder="#7ab648"
+      />
       <FieldLabel>Right panel background</FieldLabel>
       <select
         value={club.panel_bg}
-        onChange={(e) => updateClub({ panel_bg: e.target.value })}
+        onChange={(e) => {
+          const next = e.target.value
+          const patch = { panel_bg: next }
+          if (
+            next === 'custom' &&
+            (!club.panel_bg_custom || String(club.panel_bg_custom).startsWith('rgba'))
+          ) {
+            patch.panel_bg_custom = '#0a1a0a'
+          }
+          updateClub(patch)
+        }}
         className="adm-select"
         style={S.input}
       >
@@ -1260,11 +1286,12 @@ export default function Admin() {
       </select>
       {club.panel_bg === 'custom' ? (
         <>
-          <FieldLabel>Custom background</FieldLabel>
-          <TextInput
+          <FieldLabel>Custom background color</FieldLabel>
+          <ColorPickerField
             value={club.panel_bg_custom}
             onChange={(v) => updateClub({ panel_bg_custom: v })}
-            placeholder="rgba(6,14,8,0.82)"
+            fallback="#0a1a0a"
+            placeholder="#0a1a0a"
           />
         </>
       ) : null}
@@ -1405,9 +1432,7 @@ export default function Admin() {
           <span style={S.previewClubName}>{CLUB_DISPLAY_NAME}</span>
         </div>
         <div style={S.previewFrame}>
-          <div style={S.previewFrameInner}>
-            <MiniPreview club={club} course={course} />
-          </div>
+          <PlayerScaledPreview club={club} course={course} />
         </div>
       </main>
     </div>
@@ -1528,20 +1553,47 @@ const S = {
   previewFrame: {
     flex: 1,
     width: '100%',
-    padding: 16,
+    padding: 12,
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: 'stretch',
+    justifyContent: 'stretch',
     minHeight: 0,
     overflow: 'hidden',
   },
-  previewFrameInner: {
-    width: '100%',
-    height: '100%',
+  locationWrap: { position: 'relative' },
+  locationDropdown: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    background: '#111814',
+    border: '0.5px solid rgba(255,255,255,0.12)',
+    borderTop: 'none',
+    borderRadius: '0 0 8px 8px',
+    overflow: 'hidden',
+  },
+  locationOption: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 0,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    width: '100%',
+    padding: '8px 10px',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.80)',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    textAlign: 'left',
+  },
+  locationOptionHover: {
+    background: 'rgba(255,255,255,0.06)',
+  },
+  locationOptionCountry: {
+    marginTop: 2,
+    fontSize: 9,
+    color: 'rgba(255,255,255,0.35)',
   },
   subSectionHeader: {
     margin: 0,
@@ -1685,15 +1737,34 @@ const S = {
   achievementName: { margin: '2px 0 0', fontSize: 11, fontWeight: 500 },
   achievementDetail: { margin: '2px 0 0', fontSize: 10, color: 'rgba(255,255,255,0.55)' },
   eventRow: { display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 0' },
-  colorRow: { display: 'flex', alignItems: 'center', gap: 8 },
-  colorSwatch: {
+  colorRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+  colorSwatchLabel: {
+    position: 'relative',
+    width: 24,
+    height: 24,
+    flexShrink: 0,
+    cursor: 'pointer',
+  },
+  admColorSwatch: {
+    display: 'block',
     width: 24,
     height: 24,
     borderRadius: '50%',
+    border: '0.5px solid rgba(255,255,255,0.25)',
+  },
+  colorSwatchInput: {
+    position: 'absolute',
+    inset: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0,
+    cursor: 'pointer',
     border: 'none',
     padding: 0,
-    cursor: 'pointer',
-    background: 'transparent',
   },
   bgSlot: {
     aspectRatio: '16 / 9',
@@ -1713,101 +1784,4 @@ const S = {
     background: 'rgba(127,29,29,0.35)',
     borderTop: '0.5px solid rgba(248,113,113,0.25)',
   },
-  miniOuter: {
-    width: '100%',
-    maxHeight: '100%',
-    aspectRatio: '16 / 9',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  miniScaleBox: {
-    width: `${(100 / 1.8).toFixed(2)}%`,
-    height: `${(100 / 1.8).toFixed(2)}%`,
-    transform: 'scale(1.8)',
-    transformOrigin: 'center center',
-  },
-  miniScreen: {
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    borderRadius: 8,
-    overflow: 'hidden',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-  },
-  miniLeft: { width: '72%', position: 'relative', overflow: 'hidden' },
-  miniPhoto: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-  miniLeftOverlay: {
-    position: 'absolute',
-    inset: 0,
-    background: 'linear-gradient(180deg, rgba(0,0,0,0.45) 0%, transparent 40%, rgba(0,0,0,0.55) 100%)',
-  },
-  miniLogoBlock: { position: 'absolute', top: '4%', left: '3%' },
-  miniLogo: { height: 14, width: 'auto', filter: 'brightness(10)', opacity: 0.92 },
-  miniTagline: { margin: '2px 0 0', fontSize: 4, color: '#fff' },
-  miniStatusBadge: {
-    position: 'absolute',
-    top: '4%',
-    left: '62%',
-    transform: 'translateX(-50%)',
-    fontSize: 4,
-    fontWeight: 700,
-    letterSpacing: 0.5,
-    padding: '2px 6px',
-    borderRadius: 8,
-    whiteSpace: 'nowrap',
-  },
-  miniConditions: {
-    position: 'absolute',
-    left: '3%',
-    top: '50%',
-    transform: 'translateY(-50%)',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  miniCondLabel: { margin: 0, fontSize: 3.5, textTransform: 'uppercase', letterSpacing: 0.4 },
-  miniCondVal: { margin: '1px 0 0', fontSize: 5.5, color: '#fff' },
-  miniCenterCard: {
-    position: 'absolute',
-    top: '50%',
-    left: '62%',
-    transform: 'translate(-50%, -50%)',
-    width: '38%',
-    background: 'rgba(255,255,255,0.12)',
-    backdropFilter: 'blur(4px)',
-    borderRadius: 4,
-    padding: '6px 8px',
-    border: '0.5px solid rgba(255,255,255,0.15)',
-  },
-  miniCardLabel: { margin: 0, fontSize: 3.5, textTransform: 'uppercase', letterSpacing: 0.5 },
-  miniCardBody: { margin: '3px 0 0', fontSize: 4.5, color: 'rgba(255,255,255,0.85)', lineHeight: 1.3 },
-  miniRight: {
-    width: '28%',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'space-evenly',
-    padding: '6px 8px',
-    fontSize: 5,
-  },
-  miniPanelBlock: { padding: '2px 0' },
-  miniTemp: { margin: 0, fontSize: 14, fontWeight: 200, lineHeight: 1 },
-  miniWeatherSub: { margin: '2px 0 0', fontSize: 4, color: 'rgba(255,255,255,0.65)' },
-  miniForecast: { display: 'flex', gap: 4, marginTop: 4 },
-  miniForecastCol: { flex: 1, textAlign: 'center', fontSize: 3.5, color: 'rgba(255,255,255,0.55)' },
-  miniSectionTitle: {
-    margin: '0 0 3px',
-    fontSize: 4,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  miniRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: 4,
-    marginTop: 2,
-    gap: 4,
-  },
-  miniRowVal: { color: 'rgba(255,255,255,0.85)', textAlign: 'right' },
 }

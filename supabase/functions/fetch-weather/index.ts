@@ -49,9 +49,20 @@ Deno.serve(async (_req) => {
   }
 
   try {
-    // Olde Sycamore Golf Plantation clubhouse (7500 Olde Sycamore Dr, Charlotte NC)
-    const lat = 35.1653
-    const lon = -80.6093
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false },
+    })
+
+    // Coordinates come from club_settings (set when admin publishes location).
+    // Each cron run reads the latest row so weather follows the published course location.
+    const { data: settings } = await supabase
+      .from('club_settings')
+      .select('latitude, longitude')
+      .limit(1)
+      .maybeSingle()
+
+    const lat = settings?.latitude ?? 35.2271
+    const lon = settings?.longitude ?? -80.8431
 
     const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&timezone=America%2FNew_York&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover,uv_index,precipitation_probability,is_day&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&forecast_days=1`
 
@@ -66,10 +77,6 @@ Deno.serve(async (_req) => {
 
     const code = current.weather_code as number
     const mapping = WEATHER_CODES[code] || { text: 'Unknown', icon: '❓' }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-      auth: { persistSession: false },
-    })
 
     await supabase.from('weather_cache').delete().neq('id', 0)
 

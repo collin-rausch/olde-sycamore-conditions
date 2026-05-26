@@ -170,7 +170,7 @@ function normalizeClubSettingsRow(row) {
 }
 
 function resolvePanelBackground(panelBg, panelBgCustom) {
-  if (panelBg === 'custom') return panelBgCustom || PANEL_BG_PRESETS.dark_green
+  if (panelBg === 'custom') return panelBgCustom || '#0a1a0a'
   return PANEL_BG_PRESETS[panelBg] || PANEL_BG_PRESETS.dark_green
 }
 
@@ -247,17 +247,34 @@ function formatCartRule(rule) {
 }
 
 function normalizeCourseStatusKey(status) {
-  const s = (status || 'open').toLowerCase().replace(/-/g, ' ').trim()
-  if (s === 'closed') return 'closed'
-  if (s.includes('frost')) return 'frost'
+  const s = (status || 'open')
+    .toLowerCase()
+    .replace(/-/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (s === 'closed' || s.includes('closed')) return 'closed'
+  if (s.includes('frost')) return 'frost-delay'
+  if (s.includes('rain')) return 'rain-delay'
+  if (s.includes('maintenance')) return 'maintenance'
+  if (s.includes('back') && s.includes('9')) return 'back-9-only'
+  if (s.includes('front') && s.includes('9')) return 'front-9-only'
   return 'open'
+}
+
+const STATUS_BADGE_LABELS = {
+  open: 'OPEN',
+  'frost-delay': 'FROST DELAY',
+  'rain-delay': 'RAIN DELAY',
+  maintenance: 'MAINTENANCE',
+  'back-9-only': 'BACK 9 ONLY',
+  'front-9-only': 'FRONT 9 ONLY',
+  closed: 'CLOSED',
 }
 
 function getStatusBadgeLabel(status) {
   const key = normalizeCourseStatusKey(status)
-  if (key === 'closed') return 'CLOSED'
-  if (key === 'frost') return 'FROST DELAY'
-  return 'OPEN'
+  return STATUS_BADGE_LABELS[key] || 'OPEN'
 }
 
 function getStatusBadgeStyle(status) {
@@ -269,11 +286,18 @@ function getStatusBadgeStyle(status) {
       color: 'var(--os-red)',
     }
   }
-  if (key === 'frost') {
+  if (key === 'frost-delay' || key === 'rain-delay') {
     return {
       background: 'rgba(29,78,216,0.72)',
       border: '0.5px solid rgba(96,165,250,0.55)',
       color: '#93c5fd',
+    }
+  }
+  if (key === 'maintenance' || key === 'back-9-only' || key === 'front-9-only') {
+    return {
+      background: 'rgba(120,53,15,0.72)',
+      border: '0.5px solid rgba(251,191,36,0.55)',
+      color: '#fbbf24',
     }
   }
   return {
@@ -862,15 +886,21 @@ export default function Player() {
 
   useEffect(() => {
     let subscription
+    let cancelled = false
 
     async function loadCourseStatus() {
-      const { data } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('course_status')
         .select('*')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle()
 
+      if (cancelled) return
+      if (fetchError) {
+        console.warn('[Player] course_status load failed:', fetchError.message)
+        return
+      }
       if (data) setCourseStatus(data)
     }
 
@@ -882,12 +912,24 @@ export default function Player() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'course_status' },
         (payload) => {
-          if (payload.new) setCourseStatus(payload.new)
+          if (payload.eventType === 'DELETE') {
+            loadCourseStatus()
+            return
+          }
+          if (payload.new && typeof payload.new === 'object') {
+            setCourseStatus(payload.new)
+            return
+          }
+          loadCourseStatus()
         },
       )
       .subscribe()
 
+    const pollId = setInterval(loadCourseStatus, 60000)
+
     return () => {
+      cancelled = true
+      clearInterval(pollId)
       subscription?.unsubscribe()
     }
   }, [])
