@@ -333,7 +333,7 @@ export default function PlayerScaledPreview({ club, course }) {
             <div className="left-ui">
               <div className="overlay-top-left">
                 <img className="overlay-logo" src={logoUrl} alt="" />
-                {club.show_tagline !== false && club.club_tagline ? (
+                {club.show_tagline === true && club.club_tagline ? (
                   <p className="overlay-tagline">{club.club_tagline}</p>
                 ) : null}
               </div>
@@ -739,21 +739,24 @@ const PLAYER_PREVIEW_CSS = `
   }
 
   .player-preview-root .panel-section {
-    flex: 1;
+    flex: 1 1 0;
+    flex-shrink: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding: 12px 14px;
+    padding: 9px 10.5px;
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
     overflow: hidden;
   }
 
   .player-preview-root .panel-section-inner {
-    flex: 1;
+    flex: 1 1 0;
+    flex-shrink: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
     justify-content: space-evenly;
+    overflow: hidden;
   }
 
   .player-preview-root .panel-section-header {
@@ -770,7 +773,7 @@ const PLAYER_PREVIEW_CSS = `
     justify-content: space-between;
     align-items: center;
     gap: 8px;
-    padding: 6px 0;
+    padding: 4.5px 0;
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
   }
 
@@ -862,12 +865,12 @@ const PLAYER_PREVIEW_CSS = `
   }
 
   .player-preview-root .community-item {
-    padding: 6px 0;
+    padding: 4.5px 0;
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
   }
 
   .player-preview-root .community-item:last-child { border-bottom: none; }
-  .player-preview-root .community-type { margin: 0; font-size: 11px; color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
-  .player-preview-root .community-name { margin: 2px 0 0; font-size: 14px; font-weight: 500; }
-  .player-preview-root .community-detail { margin: 2px 0 0; font-size: 12px; color: rgba(255,255,255,0.82); }
+  .player-preview-root .community-type { margin: 0; font-size: 9.5px; color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
+  .player-preview-root .community-name { margin: 2px 0 0; font-size: 12px; font-weight: 500; line-height: 1.15; }
+  .player-preview-root .community-detail { margin: 2px 0 0; font-size: 10px; color: rgba(255,255,255,0.82); line-height: 1.2; }
 `

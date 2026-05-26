@@ -151,11 +151,18 @@ function parseJsonField(val, fallback) {
   }
 }
 
+function parseShowTagline(value) {
+  if (value === true || value === false) return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return true
+}
+
 function normalizeClubSettingsRow(row) {
   if (!row) return null
   return {
     club_tagline: row.club_tagline,
-    show_tagline: row.show_tagline,
+    show_tagline: parseShowTagline(row.show_tagline),
     logo_url: row.logo_url,
     bg_photo_url: row.bg_photo_url,
     accent_color: row.accent_color,
@@ -996,7 +1003,7 @@ export default function Player() {
   )
   const logoUrl = clubSettings?.logo_url || LOGO_URL
   const coursePhotoUrl = clubSettings?.bg_photo_url || COURSE_PHOTO_URL
-  const showTagline = clubSettings?.show_tagline !== false
+  const showTagline = clubSettings?.show_tagline === true
   const clubTagline = clubSettings?.club_tagline || '18 holes · Est. 1997'
 
   const tournamentLeaderboard = useMemo(
@@ -1482,22 +1489,25 @@ export default function Player() {
         }
 
         .panel-section {
-          flex: 1;
+          flex: 1 1 0;
+          flex-shrink: 1;
           min-height: 0;
           display: flex;
           flex-direction: column;
-          padding: clamp(8px, 1.2vh, 12px) clamp(10px, 1.3vw, 14px);
+          padding: clamp(6px, 0.9vh, 9px) clamp(7.5px, 0.975vw, 10.5px);
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
           overflow: hidden;
         }
 
         .panel-section-inner {
-          flex: 1;
+          flex: 1 1 0;
+          flex-shrink: 1;
           min-height: 0;
           display: flex;
           flex-direction: column;
           justify-content: space-evenly;
           gap: 0;
+          overflow: hidden;
         }
 
         .panel-section-header {
@@ -1515,7 +1525,7 @@ export default function Player() {
           justify-content: space-between;
           align-items: center;
           gap: 8px;
-          padding: clamp(4px, 0.65vh, 6px) 0;
+          padding: clamp(3px, 0.49vh, 4.5px) 0;
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
         }
 
@@ -1633,14 +1643,14 @@ export default function Player() {
         }
 
         .community-item {
-          padding: clamp(4px, 0.65vh, 6px) 0;
+          padding: clamp(3px, 0.5vh, 4.5px) 0;
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
         }
 
         .community-item:last-child { border-bottom: none; }
-        .community-type { margin: 0; font-size: clamp(9px, 1vw, 11px); color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
-        .community-name { margin: 2px 0 0; font-size: clamp(12px, 1.3vw, 14px); font-weight: 500; color: var(--os-white); line-height: 1.2; }
-        .community-detail { margin: 2px 0 0; font-size: clamp(10px, 1.1vw, 12px); color: var(--os-white-80); line-height: 1.25; }
+        .community-type { margin: 0; font-size: clamp(7.5px, 0.85vw, 9.5px); color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
+        .community-name { margin: 2px 0 0; font-size: clamp(10px, 1.1vw, 12px); font-weight: 500; color: var(--os-white); line-height: 1.15; }
+        .community-detail { margin: 2px 0 0; font-size: clamp(8.5px, 0.94vw, 10px); color: var(--os-white-80); line-height: 1.2; }
 
         .player-error {
           position: fixed;

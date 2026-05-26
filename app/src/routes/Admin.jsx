@@ -10,13 +10,6 @@ const DEFAULT_BG_URL =
 
 const CLUB_DISPLAY_NAME = 'Olde Sycamore Golf Club'
 
-const PANEL_BG_PRESETS = {
-  dark_green: 'rgba(6,14,8,0.82)',
-  dark_navy: 'rgba(6,12,24,0.82)',
-  dark_charcoal: 'rgba(18,18,18,0.82)',
-  custom: null,
-}
-
 const STATUS_OPTIONS = [
   'Open',
   'Frost Delay',
@@ -63,8 +56,41 @@ const PANEL_SLOT_TOGGLES = [
   { key: 'community', label: 'Community', desc: 'Achievements, records, events' },
 ]
 
+const FETCH_WEATHER_URL =
+  `${process.env.REACT_APP_SUPABASE_URL || 'https://xntieyqrodsjelotcmnr.supabase.co'}/functions/v1/fetch-weather`
+
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function parseShowTagline(value) {
+  if (value === true || value === false) return value
+  if (value === 'true') return true
+  if (value === 'false') return false
+  return true
+}
+
+async function refreshWeatherAfterPublish() {
+  const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY
+  if (!anonKey) {
+    console.warn('[Admin] REACT_APP_SUPABASE_ANON_KEY missing; skipping fetch-weather')
+    return
+  }
+
+  try {
+    const res = await fetch(FETCH_WEATHER_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+      },
+    })
+    if (!res.ok) {
+      console.warn('[Admin] fetch-weather returned', res.status, await res.text())
+    }
+  } catch (err) {
+    console.warn('[Admin] fetch-weather failed:', err)
+  }
 }
 
 function defaultProShopRows() {
@@ -247,7 +273,13 @@ function normalizeHexColor(value, fallback) {
 
 function TablerIcon({ name, style }) {
   const iconClass = name.startsWith('ti-') ? name : `ti-${name}`
-  return <i className={`ti ${iconClass}`} style={style} aria-hidden="true" />
+  return (
+    <i
+      className={`ti ${iconClass}`}
+      style={{ fontFamily: 'tabler-icons', lineHeight: 1, ...style }}
+      aria-hidden="true"
+    />
+  )
 }
 
 function SubHeader({ children }) {
@@ -548,7 +580,7 @@ export default function Admin() {
       setSettingsRowId(row.id)
       setClub({
         club_tagline: row.club_tagline ?? defaultClubSettings().club_tagline,
-        show_tagline: row.show_tagline ?? true,
+        show_tagline: parseShowTagline(row.show_tagline),
         location_name: row.location_name ?? 'Charlotte, NC',
         latitude: row.latitude,
         longitude: row.longitude,
@@ -655,7 +687,7 @@ export default function Admin() {
 
       const settingsPayload = {
         club_tagline: club.club_tagline.trim(),
-        show_tagline: club.show_tagline,
+        show_tagline: club.show_tagline === true,
         location_name: club.location_name.trim(),
         latitude,
         longitude,
@@ -770,7 +802,16 @@ export default function Admin() {
       }
       console.log('[Admin] course_status saved:', courseData)
       if (courseData?.id) setCourseRowId(courseData.id)
-      updateClub({ latitude, longitude, logo_url: logoUrl, bg_photo_url: bgUrl })
+
+      await refreshWeatherAfterPublish()
+
+      updateClub({
+        latitude,
+        longitude,
+        logo_url: logoUrl,
+        bg_photo_url: bgUrl,
+        show_tagline: parseShowTagline(settingsData?.show_tagline ?? club.show_tagline),
+      })
       setLogoFile(null)
       setBgFile(null)
       setPublished(true)
@@ -845,8 +886,8 @@ export default function Admin() {
       />
       <ToggleRow
         label="Show tagline below logo"
-        on={club.show_tagline}
-        onChange={(v) => updateClub({ show_tagline: v })}
+        on={club.show_tagline === true}
+        onChange={(v) => updateClub({ show_tagline: v === true })}
       />
       <SubHeader>Location</SubHeader>
       <FieldLabel>City, State</FieldLabel>
@@ -1357,6 +1398,14 @@ export default function Admin() {
         }
         .admin-edit-body::-webkit-scrollbar { width: 3px; }
         .admin-edit-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+        .adm-icon-btn .ti {
+          font-family: tabler-icons !important;
+          font-style: normal;
+          font-weight: normal;
+          font-size: 18px;
+          line-height: 1;
+          -webkit-font-smoothing: antialiased;
+        }
         .adm-icon-btn:hover { background: rgba(255,255,255,0.06) !important; color: rgba(255,255,255,0.70) !important; }
         .adm-icon-btn.active { background: rgba(122,182,72,0.15) !important; color: #7ab648 !important; }
         .adm-delete-btn:hover { color: #f87171 !important; border-color: rgba(248,113,113,0.35) !important; }
@@ -1384,7 +1433,7 @@ export default function Admin() {
               onClick={() => setActiveSection(item.id)}
               title={item.title}
             >
-              <i className={`ti ti-${item.icon}`} aria-hidden="true" />
+              <TablerIcon name={item.icon} />
             </button>
           </React.Fragment>
         ))}
