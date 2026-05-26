@@ -9,15 +9,6 @@ const DEFAULT_LOGO_URL =
 const DEFAULT_BG_URL =
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/img-olde-sycamore-1.webp'
 
-const DEMO_FORECAST = [
-  { time: '2 PM', temp: 70, precip: 10 },
-  { time: '3 PM', temp: 71, precip: 15 },
-  { time: '4 PM', temp: 72, precip: 20 },
-  { time: '5 PM', temp: 71, precip: 25 },
-  { time: '6 PM', temp: 69, precip: 30 },
-  { time: '7 PM', temp: 67, precip: 35 },
-]
-
 const PREVIEW_SLOT_DEFS = [
   { id: 'tournament', toggleKey: 'tournament', label: 'Club tournament', dotColor: '#4ade80' },
   { id: 'pro', toggleKey: 'pgaTour', label: 'PGA Tour · live', dotColor: '#60a5fa' },
@@ -248,7 +239,7 @@ function buildCommunityItems(communityItems) {
   return items
 }
 
-export default function PlayerScaledPreview({ club, course }) {
+export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
   const wrapperRef = useRef(null)
   const [scale, setScale] = useState(0.5)
 
@@ -277,6 +268,9 @@ export default function PlayerScaledPreview({ club, course }) {
 
   const statusBadgeLabel = getStatusBadgeLabel(course.course_status)
   const statusBadgeStyle = getStatusBadgeStyle(course.course_status)
+
+  const wx = weatherDisplay ?? {}
+  const forecastSlots = wx.forecast ?? []
 
   const conditionItems = [
     { label: 'Greens', value: course.greens_speed || '11.2 ft' },
@@ -374,36 +368,38 @@ export default function PlayerScaledPreview({ club, course }) {
               <section className="panel-section panel-section-weather">
                 <div className="panel-section-inner">
                   <div className="weather-hero">
-                    <p className="panel-temp">68°</p>
+                    <p className="panel-temp">{wx.temperature ?? '—'}°</p>
                     <div className="weather-meta">
-                      <p className="weather-condition">Partly Cloudy</p>
-                      <p className="weather-feels">Feels like 66°</p>
+                      <p className="weather-condition">{wx.condition ?? '—'}</p>
+                      <p className="weather-feels">
+                        Feels like {wx.feelsLike ?? '—'}°
+                      </p>
                     </div>
                   </div>
                   <div className="weather-stats-grid">
                     <div>
                       <p className="weather-stat-label">Wind</p>
-                      <p className="weather-stat-value">NE 10 mph</p>
+                      <p className="weather-stat-value">{wx.wind ?? '—'}</p>
                     </div>
                     <div>
                       <p className="weather-stat-label">Humidity</p>
-                      <p className="weather-stat-value">55%</p>
+                      <p className="weather-stat-value">{wx.humidity ?? '—'}</p>
                     </div>
                     <div>
                       <p className="weather-stat-label">UV Index</p>
-                      <p className="weather-stat-value">6 · High</p>
+                      <p className="weather-stat-value">{wx.uv ?? '—'}</p>
                     </div>
                     <div>
                       <p className="weather-stat-label">Rain</p>
-                      <p className="weather-stat-value">20%</p>
+                      <p className="weather-stat-value">{wx.rain ?? '—'}</p>
                     </div>
                   </div>
                   <div className="panel-forecast-wrap">
                     <div className="panel-forecast">
-                      {DEMO_FORECAST.map((slot, i) => (
+                      {forecastSlots.map((slot, i) => (
                         <div
-                          key={slot.time}
-                          className={`panel-forecast-col${i < DEMO_FORECAST.length - 1 ? ' panel-forecast-col-divider' : ''}`}
+                          key={`${slot.time}-${i}`}
+                          className={`panel-forecast-col${i < forecastSlots.length - 1 ? ' panel-forecast-col-divider' : ''}`}
                         >
                           <p className="panel-forecast-time">{slot.time}</p>
                           <p className="panel-forecast-temp">{slot.temp}°</p>
@@ -415,11 +411,11 @@ export default function PlayerScaledPreview({ club, course }) {
                   <div className="sun-row">
                     <span>
                       <span className="sun-label">Sunrise </span>
-                      <span className="sun-value">6:12 AM</span>
+                      <span className="sun-value">{wx.sunrise ?? '—'}</span>
                     </span>
                     <span>
                       <span className="sun-label">Sunset </span>
-                      <span className="sun-value">8:24 PM</span>
+                      <span className="sun-value">{wx.sunset ?? '—'}</span>
                     </span>
                   </div>
                 </div>

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PlayerScaledPreview from '../components/PlayerScaledPreview'
+import { getWindCardinal } from '../lib/weatherVisuals'
 import { supabase } from '../lib/supabaseClient'
 
 const DEFAULT_LOGO_URL =
@@ -68,6 +69,156 @@ function parseShowTagline(value) {
   if (value === 'true') return true
   if (value === 'false') return false
   return true
+}
+
+const DEMO_WEATHER_PREVIEW = {
+  temperature: '68',
+  condition: 'Partly Cloudy',
+  feelsLike: '66',
+  wind: 'NE 10 mph',
+  humidity: '55%',
+  uv: '6 · High',
+  rain: '20%',
+  sunrise: '6:12 AM',
+  sunset: '8:24 PM',
+  forecast: [
+    { time: '2 PM', temp: 70, precip: 10 },
+    { time: '3 PM', temp: 71, precip: 15 },
+    { time: '4 PM', temp: 72, precip: 20 },
+    { time: '5 PM', temp: 71, precip: 25 },
+    { time: '6 PM', temp: 69, precip: 30 },
+    { time: '7 PM', temp: 67, precip: 35 },
+  ],
+}
+
+function getPreviewUvLevel(uv) {
+  if (uv == null || Number.isNaN(uv)) return '—'
+  if (uv <= 2) return 'Low'
+  if (uv <= 5) return 'Moderate'
+  if (uv <= 7) return 'High'
+  if (uv <= 10) return 'Very High'
+  return 'Extreme'
+}
+
+function formatPreviewSunTime(isoString) {
+  if (!isoString) return '—'
+  const d = new Date(isoString)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
+
+function formatPreviewHourCompact(isoOrTime) {
+  if (!isoOrTime) return '—'
+  const s = String(isoOrTime)
+  let h = 0
+  if (s.includes('T')) {
+    const d = new Date(s)
+    if (!Number.isNaN(d.getTime())) {
+      h = parseInt(
+        d.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          hour12: false,
+          timeZone: 'America/New_York',
+        }),
+        10,
+      )
+    }
+  } else {
+    const match = s.match(/^(\d{1,2}):/)
+    if (match) h = parseInt(match[1], 10)
+    else return s
+  }
+  const hour12 = h % 12 === 0 ? 12 : h % 12
+  const suffix = h >= 12 ? 'PM' : 'AM'
+  return `${hour12} ${suffix}`
+}
+
+function parsePreviewHourlyForecast(hf) {
+  if (!hf) return null
+  if (typeof hf === 'string') {
+    try {
+      return JSON.parse(hf)
+    } catch {
+      return null
+    }
+  }
+  return hf
+}
+
+function buildPreviewForecast(hourlyRaw) {
+  const hourly = parsePreviewHourlyForecast(hourlyRaw)
+  if (!hourly?.time?.length) return null
+
+  const count = Math.min(6, hourly.time.length)
+  const slots = []
+  for (let i = 0; i < count; i++) {
+    slots.push({
+      time: formatPreviewHourCompact(hourly.time[i]),
+      temp: Math.round(Number(hourly.temperature?.[i] ?? 0)),
+      precip: Math.round(Number(hourly.precip_probability?.[i] ?? 0)),
+    })
+  }
+  return slots
+}
+
+function buildWeatherPreviewDisplay(weather, loading) {
+  if (loading) {
+    return {
+      loading: true,
+      temperature: '—',
+      condition: '—',
+      feelsLike: '—',
+      wind: '—',
+      humidity: '—',
+      uv: '—',
+      rain: '—',
+      sunrise: '—',
+      sunset: '—',
+      forecast: DEMO_WEATHER_PREVIEW.forecast.map((slot) => ({
+        ...slot,
+        temp: '—',
+        precip: '—',
+      })),
+    }
+  }
+
+  if (!weather) {
+    return { loading: false, ...DEMO_WEATHER_PREVIEW }
+  }
+
+  const temp = weather.temperature_f != null ? Math.round(Number(weather.temperature_f)) : null
+  const feels =
+    weather.feels_like_f != null ? Math.round(Number(weather.feels_like_f)) : null
+  const windDir = weather.wind_direction != null ? Number(weather.wind_direction) : null
+  const windMph = weather.wind_speed_mph != null ? Math.round(Number(weather.wind_speed_mph)) : null
+  const humidity = weather.humidity != null ? Math.round(Number(weather.humidity)) : null
+  const uv = weather.uv_index != null ? Number(weather.uv_index) : null
+  const rain =
+    weather.precip_probability != null ? Math.round(Number(weather.precip_probability)) : null
+
+  const windLabel =
+    windMph != null
+      ? `${windDir != null ? getWindCardinal(windDir) : '—'} ${windMph} mph`
+      : '—'
+
+  return {
+    loading: false,
+    temperature: temp != null ? String(temp) : '—',
+    condition: weather.condition_text || '—',
+    feelsLike: feels != null ? String(feels) : '—',
+    wind: windLabel,
+    humidity: humidity != null ? `${humidity}%` : '—',
+    uv: uv != null ? `${uv} · ${getPreviewUvLevel(uv)}` : '—',
+    rain: rain != null ? `${rain}%` : '—',
+    sunrise: formatPreviewSunTime(weather.sunrise_at),
+    sunset: formatPreviewSunTime(weather.sunset_at),
+    forecast: buildPreviewForecast(weather.hourly_forecast) ?? DEMO_WEATHER_PREVIEW.forecast,
+  }
 }
 
 async function refreshWeatherAfterPublish() {
@@ -549,7 +700,44 @@ export default function Admin() {
     date: '',
   })
 
+  const [previewWeather, setPreviewWeather] = useState(null)
+  const [previewWeatherLoading, setPreviewWeatherLoading] = useState(true)
+
   const activeNav = useMemo(() => NAV_ITEMS.find((n) => n.id === activeSection), [activeSection])
+
+  const previewWeatherDisplay = useMemo(
+    () => buildWeatherPreviewDisplay(previewWeather, previewWeatherLoading),
+    [previewWeather, previewWeatherLoading],
+  )
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadPreviewWeather() {
+      setPreviewWeatherLoading(true)
+      const { data: weather, error } = await supabase
+        .from('weather_cache')
+        .select('*')
+        .order('fetched_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (cancelled) return
+
+      if (error) {
+        console.warn('[Admin] preview weather_cache fetch failed:', error.message)
+        setPreviewWeather(null)
+      } else {
+        setPreviewWeather(weather)
+      }
+      setPreviewWeatherLoading(false)
+    }
+
+    loadPreviewWeather()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -1481,7 +1669,11 @@ export default function Admin() {
           <span style={S.previewClubName}>{CLUB_DISPLAY_NAME}</span>
         </div>
         <div style={S.previewFrame}>
-          <PlayerScaledPreview club={club} course={course} />
+          <PlayerScaledPreview
+            club={club}
+            course={course}
+            weatherDisplay={previewWeatherDisplay}
+          />
         </div>
       </main>
     </div>
