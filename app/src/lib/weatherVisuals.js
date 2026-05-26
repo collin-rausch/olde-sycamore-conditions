@@ -1,7 +1,7 @@
 /**
  * @fileoverview Cinematic weather visual engine for Olde Sycamore Golf Club.
  * Layer 1: raw weatherData → Layer 2: environmentalState → Layer 3: visualState.
- * Pure JavaScript, zero dependencies. Charlotte, NC (35.2271°N, 80.8431°W).
+ * Pure JavaScript, zero dependencies. Olde Sycamore area (35.1653°N, 80.6093°W).
  */
 
 /** @typedef {'clear'|'golden'|'overcast'|'storm'|'foggy'|'night'|'rain'|'snow'} SceneMood */

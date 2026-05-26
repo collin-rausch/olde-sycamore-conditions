@@ -72,7 +72,7 @@ SELECT
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/olde%20sycamore%20golf%20club%20logo.png',
   '#7ab648',
   'dark_green',
-  'rgba(6,14,8,0.82)',
+  'rgba(8,18,12,0.58)',
   'https://xntieyqrodsjelotcmnr.supabase.co/storage/v1/object/public/assets/img-olde-sycamore-1.webp',
   'Pro Shop & Dining',
   '[
@@ -80,12 +80,13 @@ SELECT
     {"id":"2","label":"Bar & grill","value":"11 AM – 9 PM","enabled":true},
     {"id":"3","label":"Happy hour","value":"4–7 PM · $5 drafts","enabled":true,"highlight":true},
     {"id":"4","label":"Today''s special","value":"Prime Rib Night","enabled":true},
-    {"id":"5","label":"Cart rental","value":"$20 · Paths only today","enabled":true}
+    {"id":"5","label":"Cart rental","value":"$20 · Paths only today","enabled":true},
+    {"id":"6","label":"Early bird","value":"7–9 AM · from $45","enabled":true}
   ]'::jsonb,
   '{
     "achievements":[
-      {"id":"a1","type":"HOLE IN ONE","name":"Robert Chen","detail":"Hole 7 · 162 yds · 7-iron · May 21","date":"2026-05-21","enabled":true},
-      {"id":"a2","type":"LOW ROUND","name":"J. Williams","detail":"68 · May 20 · -4 under par","date":"2026-05-20","enabled":true}
+      {"id":"a1","type":"Hole in One","name":"Robert Chen","detail":"Hole 7 · 162 yds · 7-iron · May 21","date":"2026-05-21","enabled":true},
+      {"id":"a2","type":"Low Round","name":"J. Williams","detail":"68 · May 20 · -4 under par","date":"2026-05-20","enabled":true}
     ],
     "events":[
       {"id":"e1","name":"Men''s Invitational","detail":"May 24–26 · Registration open","enabled":true}

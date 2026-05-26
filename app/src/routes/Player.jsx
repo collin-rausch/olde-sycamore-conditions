@@ -49,12 +49,8 @@ const DEFAULT_COURSE_STATS = [
   { label: 'Cart', value: '90° Rule' },
 ]
 
-const RAIN_DROPS = Array.from({ length: 60 }, (_, i) => ({
-  id: i,
-  left: `${((i * 17 + (i % 7) * 11) % 100).toFixed(1)}%`,
-  delay: `${((i * 0.13) % 2).toFixed(2)}s`,
-  duration: `${(0.6 + (i % 5) * 0.15).toFixed(2)}s`,
-}))
+const NOW_CONTEXT_LOCK_MS = 15 * 60 * 1000
+const RAIN_FRAME_MS = 1000 / 45
 
 const SLOT_IDS = {
   TOURNAMENT: 'tournament',
@@ -85,21 +81,22 @@ const PRO_SHOP_ROWS = [
   { label: 'Happy hour', value: '4–7 PM · $5 drafts', highlight: true },
   { label: "Today's special", value: 'Prime Rib Night' },
   { label: 'Cart rental', value: '$20 · Paths only today' },
+  { label: 'Early bird', value: '7–9 AM · from $45' },
 ]
 
 const COMMUNITY_ITEMS = [
   {
-    type: 'HOLE IN ONE',
+    type: 'Hole in one',
     name: 'Robert Chen',
     detail: 'Hole 7 · 162 yds · 7-iron · May 21',
   },
   {
-    type: 'LOW ROUND',
+    type: 'Low round',
     name: 'J. Williams',
     detail: '68 · May 20 · -4 under par',
   },
   {
-    type: 'UPCOMING',
+    type: 'Upcoming',
     name: "Men's Invitational",
     detail: 'May 24–26 · Registration open',
   },
@@ -129,9 +126,9 @@ const DEMO_PRO_LEADERBOARD = {
 }
 
 const PANEL_BG_PRESETS = {
-  dark_green: 'rgba(6,14,8,0.82)',
-  dark_navy: 'rgba(6,12,24,0.82)',
-  dark_charcoal: 'rgba(18,18,18,0.82)',
+  dark_green: 'rgba(8, 18, 12, 0.58)',
+  dark_navy: 'rgba(6, 12, 24, 0.58)',
+  dark_charcoal: 'rgba(18, 18, 18, 0.58)',
 }
 
 const SLOT_TOGGLE_KEYS = {
@@ -214,7 +211,7 @@ function buildCommunityDisplay(communityItems) {
   for (const a of achievements.slice(0, 5)) {
     items.push({
       key: a.id,
-      type: String(a.type || 'ACHIEVEMENT').toUpperCase(),
+      type: String(a.type || 'Achievement'),
       name: a.name,
       detail: a.detail,
     })
@@ -223,7 +220,7 @@ function buildCommunityDisplay(communityItems) {
   for (const e of events.slice(0, 3)) {
     items.push({
       key: e.id,
-      type: 'UPCOMING',
+      type: 'Upcoming',
       name: e.name,
       detail: e.detail,
     })
@@ -242,6 +239,12 @@ function capitalizeFirst(str) {
   if (!str) return '—'
   const s = String(str).trim()
   return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+}
+
+function formatProShopLabel(label) {
+  const s = String(label || '').trim()
+  if (!s) return '—'
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function formatCartRule(rule) {
@@ -310,7 +313,7 @@ function getStatusBadgeStyle(status) {
   return {
     background: 'rgba(16,68,36,0.82)',
     border: '0.5px solid rgba(74,222,128,0.55)',
-    color: 'var(--os-green-badge)',
+    color: '#ecfdf5',
   }
 }
 
@@ -336,6 +339,7 @@ function normalizeWeatherRow(row) {
     is_day: toNum(row.is_day),
     sunrise_at: row.sunrise_at ?? null,
     sunset_at: row.sunset_at ?? null,
+    fetched_at: row.fetched_at ?? row.updated_at ?? null,
   }
 }
 
@@ -397,6 +401,15 @@ function formatHourCompact(isoOrTime) {
 }
 
 function getCurrentHourlyIndex(hourly, referenceDate) {
+  const epochs = hourly?.time_epoch
+  if (Array.isArray(epochs) && epochs.length > 0) {
+    const nowSec = Math.floor(referenceDate.getTime() / 1000)
+    for (let i = 0; i < epochs.length; i++) {
+      if (Number(epochs[i]) >= nowSec - 1800) return i
+    }
+    return epochs.length - 1
+  }
+
   const times = hourly?.time || []
   if (times.length === 0) return -1
 
@@ -446,25 +459,9 @@ function getUvLabel(uv) {
   return 'Extreme'
 }
 
-function getUvLabelColor(uv) {
-  if (uv == null) return 'var(--os-white-80)'
-  if (uv <= 2) return 'var(--os-white-80)'
-  if (uv <= 5) return '#fbbf24'
-  if (uv <= 7) return '#f97316'
-  if (uv <= 10) return '#ef4444'
-  return '#a855f7'
-}
-
 function getUvRowText(uv) {
   if (uv == null) return '—'
   return `${uv} · ${getUvLabel(uv)}`
-}
-
-function getRainSummary(precip) {
-  if (precip == null || precip <= 20) return null
-  if (precip > 60) return 'Heavy rain likely today'
-  if (precip >= 40) return 'Rain likely this afternoon'
-  return 'Chance of showers later'
 }
 
 function isRainStormCode(code) {
@@ -480,27 +477,235 @@ function getPhotoFilter(weather, easternHour) {
   const isDay = weather?.is_day === 1 || weather?.is_day === true
 
   if (!isDay) {
-    return 'brightness(0.35) saturate(0.50) contrast(1.10)'
+    return 'brightness(0.30) saturate(0.45) contrast(1.12)'
   }
   if (code >= 95) {
-    return 'brightness(0.70) saturate(0.60) contrast(1.05)'
+    return 'brightness(0.70) saturate(0.55) contrast(1.06)'
   }
-  if (precip > 40 || (code >= 51 && code <= 82)) {
-    return 'brightness(0.80) saturate(0.70) contrast(0.94)'
+  if (precip > 40 || isRainStormCode(code)) {
+    return 'brightness(0.80) saturate(0.68) contrast(0.94)'
   }
   if (easternHour >= 17 && easternHour <= 20) {
-    return 'brightness(1.02) saturate(1.18) contrast(0.98) sepia(0.15)'
+    return 'brightness(1.02) saturate(1.20) contrast(0.98) sepia(0.12)'
   }
   if ((code >= 45 && code <= 48) || cloud > 70) {
     return 'brightness(0.88) saturate(0.78) contrast(0.96)'
   }
   if (code === 3) {
-    return 'brightness(0.96) saturate(0.92) contrast(1.0)'
+    return 'brightness(0.98) saturate(0.95)'
   }
   if (code >= 0 && code <= 2) {
-    return 'brightness(1.05) saturate(1.08) contrast(1.02)'
+    return 'brightness(1.05) saturate(1.10) contrast(1.02)'
   }
-  return 'brightness(1.05) saturate(1.08) contrast(1.02)'
+  return 'brightness(1.05) saturate(1.10) contrast(1.02)'
+}
+
+function formatDurationShort(totalMinutes) {
+  const mins = Math.max(0, Math.round(totalMinutes))
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h > 0 && m > 0) return `${h}hr ${m}min`
+  if (h > 0) return `${h}hr`
+  return `${m}min`
+}
+
+function findRainArrivalMinutes(hourly, referenceDate) {
+  const epochs = hourly?.time_epoch
+  const precips = hourly?.precip_probability
+  if (!Array.isArray(epochs) || !Array.isArray(precips)) return null
+
+  const nowSec = Math.floor(referenceDate.getTime() / 1000)
+  for (let i = 0; i < epochs.length; i++) {
+    const p = toNum(precips[i])
+    if (p != null && p > 50) {
+      const diffMin = Math.round((Number(epochs[i]) - nowSec) / 60)
+      if (diffMin > 0 && diffMin <= 120) return diffMin
+    }
+  }
+  return null
+}
+
+function minutesUntilSunset(sunsetAt, referenceDate) {
+  if (!sunsetAt) return null
+  const sunset = new Date(sunsetAt)
+  if (isNaN(sunset.getTime())) return null
+  const diffMin = Math.round((sunset.getTime() - referenceDate.getTime()) / 60000)
+  if (diffMin <= 0 || diffMin > 120) return null
+  return diffMin
+}
+
+function getNowContext(weather, sunriseAt, sunsetAt, hourly, referenceDate, updatedAtIso) {
+  const precip = weather?.precip_probability ?? 0
+  const code = weather?.weather_code ?? 0
+  const wind = weather?.wind_speed_mph ?? 0
+  const uv = weather?.uv_index ?? 0
+  const temp = weather?.temperature_f ?? 0
+  const isDay = weather?.is_day === 1 || weather?.is_day === true
+  const hour = getEasternHour(referenceDate)
+
+  if (precip >= 80) {
+    return { message: 'Heavy rain expected — check with pro shop', severe: true }
+  }
+  if (precip >= 50) {
+    const arrivalMin = findRainArrivalMinutes(hourly, referenceDate)
+    if (arrivalMin != null) {
+      return { message: `Rain arriving in ~${formatDurationShort(arrivalMin)}`, severe: false }
+    }
+    return { message: 'Rain likely this afternoon', severe: false }
+  }
+  if (code >= 95) {
+    return { message: 'Thunderstorm activity — course may close', severe: true }
+  }
+  if (isDay && sunsetAt) {
+    const untilSunset = minutesUntilSunset(sunsetAt, referenceDate)
+    if (untilSunset != null) {
+      return { message: `Sunset in ${formatDurationShort(untilSunset)}`, severe: false }
+    }
+  }
+  if (wind >= 15) {
+    return { message: 'Strong winds today — club up on approach shots', severe: false }
+  }
+  if (uv >= 8) {
+    return { message: 'Very high UV — sunscreen essential today', severe: false }
+  }
+  if (temp >= 95) {
+    return { message: 'Heat advisory — stay hydrated on course', severe: false }
+  }
+  if (hour >= 16 && isDay) {
+    return { message: 'Twilight rates available — check pro shop', severe: false }
+  }
+
+  let minsAgo = null
+  if (updatedAtIso) {
+    const updated = new Date(updatedAtIso)
+    if (!isNaN(updated.getTime())) {
+      minsAgo = Math.max(0, Math.round((referenceDate.getTime() - updated.getTime()) / 60000))
+    }
+  }
+  return {
+    message: minsAgo != null ? `Updated ${minsAgo} min ago` : 'Updated recently',
+    severe: false,
+  }
+}
+
+function getRainParticleCount(precipProb) {
+  const p = precipProb ?? 0
+  if (p <= 40) return 0
+  if (p > 60) return 200
+  return 110
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setReduced(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  return reduced
+}
+
+function RainCanvas({ active, particleCount }) {
+  const canvasRef = useRef(null)
+  const rafRef = useRef(null)
+  const particlesRef = useRef([])
+  const lastFrameRef = useRef(0)
+
+  useEffect(() => {
+    if (!active || particleCount <= 0) return undefined
+
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return undefined
+
+    const angleRad = (11 * Math.PI) / 180
+    const driftX = Math.sin(angleRad)
+    const driftY = Math.cos(angleRad)
+
+    const resize = () => {
+      const parent = canvas.parentElement
+      if (!parent) return
+      const w = parent.clientWidth
+      const h = parent.clientHeight
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.floor(w * dpr)
+      canvas.height = Math.floor(h * dpr)
+      canvas.style.width = `${w}px`
+      canvas.style.height = `${h}px`
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    }
+
+    const spawnParticle = (w, h, fromTop = false) => ({
+      x: Math.random() * (w + 80) - 40,
+      y: fromTop ? -Math.random() * h * 0.4 - 20 : Math.random() * (h + 40),
+      speed: 11 + Math.random() * 9,
+      length: 16 + Math.random() * 18,
+      opacity: 0.18 + Math.random() * 0.22,
+      width: Math.random() < 0.25 ? 1.75 : 1.15,
+    })
+
+    const initParticles = () => {
+      const w = canvas.clientWidth || 800
+      const h = canvas.clientHeight || 600
+      particlesRef.current = Array.from({ length: particleCount }, () =>
+        spawnParticle(w, h, false),
+      )
+    }
+
+    resize()
+    initParticles()
+    window.addEventListener('resize', resize)
+
+    const draw = (timestamp) => {
+      rafRef.current = requestAnimationFrame(draw)
+      if (timestamp - lastFrameRef.current < RAIN_FRAME_MS) return
+      lastFrameRef.current = timestamp
+
+      const w = canvas.clientWidth
+      const h = canvas.clientHeight
+      if (w <= 0 || h <= 0) return
+
+      ctx.clearRect(0, 0, w, h)
+      ctx.lineCap = 'round'
+
+      for (const p of particlesRef.current) {
+        const step = p.speed
+        const tailX = p.x - driftX * p.length
+        const tailY = p.y - driftY * p.length
+
+        ctx.strokeStyle = `rgba(210, 228, 248, ${p.opacity})`
+        ctx.lineWidth = p.width
+        ctx.beginPath()
+        ctx.moveTo(tailX, tailY)
+        ctx.lineTo(p.x, p.y)
+        ctx.stroke()
+
+        p.x += driftX * step
+        p.y += driftY * step
+
+        if (p.y > h + p.length + 20 || p.x < -60 || p.x > w + 60) {
+          Object.assign(p, spawnParticle(w, h, true))
+        }
+      }
+    }
+
+    rafRef.current = requestAnimationFrame(draw)
+
+    return () => {
+      window.removeEventListener('resize', resize)
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }, [active, particleCount])
+
+  if (!active || particleCount <= 0) return null
+
+  return <canvas ref={canvasRef} className="rain-canvas" aria-hidden="true" />
 }
 
 function getGolferTips(
@@ -651,6 +856,24 @@ function TablerIcon({ name }) {
   return <i className={`ti ti-${name}`} aria-hidden="true" />
 }
 
+function getTipAccent(icon) {
+  const accents = {
+    sun: { color: '#f0d080', bg: 'rgba(251, 191, 36, 0.18)', label: 'Sun & UV' },
+    wind: { color: '#8ec8f0', bg: 'rgba(96, 165, 250, 0.16)', label: 'Wind' },
+    droplet: { color: '#7eb8f5', bg: 'rgba(96, 165, 250, 0.14)', label: 'Course' },
+    umbrella: { color: '#7eb8f5', bg: 'rgba(96, 165, 250, 0.18)', label: 'Rain' },
+    'alert-triangle': { color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.18)', label: 'Alert' },
+    flag: { color: '#9ecf7a', bg: 'rgba(122, 182, 72, 0.18)', label: 'Conditions' },
+    users: { color: '#d4b896', bg: 'rgba(212, 184, 150, 0.16)', label: 'Tee times' },
+    clock: { color: '#e8d4a8', bg: 'rgba(232, 212, 168, 0.16)', label: 'Hours' },
+    moon: { color: '#c4b5fd', bg: 'rgba(196, 181, 253, 0.14)', label: 'After hours' },
+    phone: { color: '#9ec8e8', bg: 'rgba(158, 200, 232, 0.14)', label: 'Book online' },
+    star: { color: '#f0d080', bg: 'rgba(251, 191, 36, 0.14)', label: 'Practice' },
+    building: { color: '#e8d4a8', bg: 'rgba(232, 212, 168, 0.16)', label: 'Dining' },
+  }
+  return accents[icon] || { color: '#9ecf7a', bg: 'rgba(122, 182, 72, 0.16)', label: 'Tip' }
+}
+
 function formatClubScore(score) {
   if (score === 0) return { text: 'E', tone: 'even' }
   if (score < 0) return { text: String(score), tone: 'under' }
@@ -666,7 +889,7 @@ function renderClubTournament({ title, rows } = DEMO_CLUB_LEADERBOARD) {
   return (
     <div className="slot-leaderboard">
       <div className="slot-subheader">
-        <p className="slot-title">{title}</p>
+        <p className="slot-title slot-title-tournament">{title}</p>
         <p className="slot-live">● Live</p>
       </div>
       {rows.map((row, i) => {
@@ -733,7 +956,14 @@ function renderPanelForecast(slots) {
           >
             <p className="panel-forecast-time">{formatHourCompact(slot.time)}</p>
             <p className="panel-forecast-temp">
-              {slot.temp != null ? `${Math.round(slot.temp)}°` : '—'}
+              {slot.temp != null ? (
+                <>
+                  {Math.round(slot.temp)}
+                  <sup className="panel-temp-degree">°</sup>
+                </>
+              ) : (
+                '—'
+              )}
             </p>
             <p
               className={`panel-forecast-rain${rainHigh ? ' panel-forecast-rain-high' : ''}`}
@@ -760,15 +990,32 @@ function renderCourseNotice(notice) {
 function renderGolferTips(tips) {
   return (
     <div className="slot-tips">
-      {tips.map((tip, i) => (
-        <div
-          key={i}
-          className={`tip-row${i < tips.length - 1 ? ' tip-row-border' : ''}`}
-        >
-          <TablerIcon name={tip.icon} />
-          <p className="tip-text">{tip.text}</p>
-        </div>
-      ))}
+      {tips.map((tip, i) => {
+        const accent = getTipAccent(tip.icon)
+        return (
+          <div
+            key={i}
+            className="tip-card"
+            style={{
+              borderLeftColor: accent.color,
+              background: `linear-gradient(90deg, ${accent.bg} 0%, transparent 72%)`,
+            }}
+          >
+            <div
+              className="tip-icon-wrap"
+              style={{ background: accent.bg, color: accent.color }}
+            >
+              <TablerIcon name={tip.icon} />
+            </div>
+            <div className="tip-body">
+              <p className="tip-label" style={{ color: accent.color }}>
+                {accent.label}
+              </p>
+              <p className="tip-text">{tip.text}</p>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -801,6 +1048,9 @@ export default function Player() {
   const [cardFade, setCardFade] = useState(1)
   const hasResetVisuals = useRef(false)
   const fadeTimeoutRef = useRef(null)
+  const nowContextLockRef = useRef({ message: 'Updated recently', lockUntil: 0 })
+  const prefersReducedMotion = usePrefersReducedMotion()
+  const [nowContextLine, setNowContextLine] = useState('Updated recently')
 
   useEffect(() => {
     const link = document.createElement('link')
@@ -1017,7 +1267,7 @@ export default function Player() {
     const enabled = rows.filter((r) => r.enabled !== false)
     if (!enabled.length) return PRO_SHOP_ROWS
     return enabled.map((r) => ({
-      label: r.label,
+      label: formatProShopLabel(r.label),
       value: r.value,
       highlight: r.highlight,
     }))
@@ -1050,7 +1300,7 @@ export default function Player() {
   }, [activeSlots.length, courseNotice])
 
   useEffect(() => {
-    if (activeSlots.length === 0) return
+    if (activeSlots.length === 0 || prefersReducedMotion) return
 
     const intervalId = setInterval(() => {
       setCardFade(0)
@@ -1065,7 +1315,7 @@ export default function Player() {
       clearInterval(intervalId)
       if (fadeTimeoutRef.current) clearTimeout(fadeTimeoutRef.current)
     }
-  }, [activeSlots.length])
+  }, [activeSlots.length, prefersReducedMotion])
 
   useEffect(() => {
     if (!started) return
@@ -1108,7 +1358,8 @@ export default function Player() {
     [visualWeather, easternHour],
   )
 
-  const showRain = (precipProb ?? 0) > 40
+  const rainParticleCount = getRainParticleCount(precipProb)
+  const showRain = rainParticleCount > 0 && !prefersReducedMotion
 
   const displayTemp = useMemo(
     () => getDisplayTemperature(weather, hourly, clock),
@@ -1124,16 +1375,59 @@ export default function Player() {
       : '—'
 
   const uvValue = weather?.uv_index
-  const uvColor = getUvLabelColor(uvValue)
   const uvRowText = getUvRowText(uvValue)
   const rainLabelText =
     precipProb != null ? `${Math.round(precipProb)}%` : '—'
-  const rainSummary = getRainSummary(precipProb)
 
   const forecastSlots = useMemo(() => {
     if (!hourly) return []
     return getForecastSlots(hourly, clock)
   }, [hourly, clock])
+
+  useEffect(() => {
+    const raw = getNowContext(
+      visualWeather,
+      visualWeather?.sunrise_at,
+      visualWeather?.sunset_at,
+      hourly,
+      clock,
+      visualWeather?.fetched_at,
+    )
+    const now = Date.now()
+    const lock = nowContextLockRef.current
+
+    if (raw.severe) {
+      nowContextLockRef.current = {
+        message: raw.message,
+        lockUntil: now + NOW_CONTEXT_LOCK_MS,
+      }
+      setNowContextLine(raw.message)
+      return
+    }
+
+    if (lock.message && now < lock.lockUntil) {
+      return
+    }
+
+    nowContextLockRef.current = {
+      message: raw.message,
+      lockUntil: now + NOW_CONTEXT_LOCK_MS,
+    }
+    setNowContextLine(raw.message)
+  }, [
+    visualWeather,
+    visualWeather?.precip_probability,
+    visualWeather?.weather_code,
+    visualWeather?.wind_speed_mph,
+    visualWeather?.uv_index,
+    visualWeather?.temperature_f,
+    visualWeather?.is_day,
+    visualWeather?.sunrise_at,
+    visualWeather?.sunset_at,
+    visualWeather?.fetched_at,
+    hourly,
+    clock,
+  ])
 
   const conditionItems = useMemo(() => {
     if (!courseStatus) return DEFAULT_COURSE_STATS
@@ -1183,33 +1477,40 @@ export default function Player() {
 
 
   const playerRootStyle = {
-    '--os-green-label': accentColor,
+    '--os-accent-green': accentColor,
   }
 
   return (
     <div className="player-root" style={playerRootStyle}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
-
         .player-root {
-          --os-green-label: #7ab648;
+          --os-accent-green: #7ab648;
           --os-white: #ffffff;
-          --os-white-80: rgba(255, 255, 255, 0.82);
-          --os-white-55: rgba(255, 255, 255, 0.55);
-          --os-white-40: rgba(255, 255, 255, 0.40);
-          --os-divider: rgba(255, 255, 255, 0.07);
+          --os-white-80: rgba(255, 255, 255, 0.88);
+          --os-white-55: rgba(255, 255, 255, 0.78);
+          --os-white-40: rgba(255, 255, 255, 0.72);
+          /* WCAG AA (4.5:1) on panel surface ~#0c1510 */
+          --os-label: rgba(255, 255, 255, 0.78);
+          --os-section-header: rgba(255, 255, 255, 0.75);
+          --os-body-muted: rgba(255, 255, 255, 0.88);
+          --os-text-on-photo: rgba(255, 255, 255, 0.78);
+          --os-panel-accent: #e8f0dc;
+          --os-panel-heading-proshop: #f2ead4;
+          --os-panel-heading-community: #eddcc4;
+          --os-context-info: #93c5fd;
+          --os-divider: rgba(255, 255, 255, 0.12);
           --os-card: rgba(0, 0, 0, 0.22);
           --os-card-border: rgba(255, 255, 255, 0.10);
-          --os-green-badge: #4ade80;
-          --os-blue: #60a5fa;
-          --os-amber: #fbbf24;
-          --os-red: #ef4444;
+          --os-green-badge: #86efac;
+          --os-blue: #93c5fd;
+          --os-amber: #fcd34d;
+          --os-red: #fca5a5;
           position: fixed;
           inset: 0;
           width: 100vw;
           height: 100vh;
           overflow: hidden;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          font-family: 'Plus Jakarta Sans', sans-serif;
           color: var(--os-white);
         }
 
@@ -1227,6 +1528,13 @@ export default function Player() {
           z-index: 0;
         }
 
+        .scene-photo-wrap {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          z-index: 0;
+        }
+
         .scene-photo {
           position: absolute;
           inset: 0;
@@ -1234,34 +1542,45 @@ export default function Player() {
           height: 100%;
           object-fit: cover;
           object-position: center 40%;
-          z-index: 0;
           pointer-events: none;
-          transition: filter 3s ease;
+          transform-origin: center center;
+          will-change: transform;
+          transition: filter 4s ease;
+          animation: kenBurns 90s ease-in-out infinite;
         }
 
-        .rain-layer {
+        @keyframes kenBurns {
+          0% { transform: scale(1) translate(0, 0); }
+          25% { transform: scale(1.04) translate(-8px, -4px); }
+          50% { transform: scale(1.06) translate(-4px, -8px); }
+          75% { transform: scale(1.04) translate(4px, -6px); }
+          100% { transform: scale(1) translate(0, 0); }
+        }
+
+        .rain-canvas {
           position: absolute;
-          inset: -10% -5%;
-          z-index: 2;
+          inset: 0;
+          z-index: 4;
+          width: 100%;
+          height: 100%;
           pointer-events: none;
-          overflow: hidden;
-          transform: rotate(8deg);
         }
 
-        .rain-drop {
-          position: absolute;
-          top: -8%;
-          width: 1px;
-          height: clamp(14px, 2.2vh, 28px);
-          background: linear-gradient(180deg, transparent 0%, rgba(200, 220, 240, 0.35) 100%);
-          animation: rain-fall linear infinite;
-        }
+        @media (prefers-reduced-motion: reduce) {
+          .scene-photo {
+            animation: none;
+            will-change: auto;
+          }
 
-        @keyframes rain-fall {
-          0% { transform: translateY(0); opacity: 0; }
-          10% { opacity: 0.35; }
-          90% { opacity: 0.35; }
-          100% { transform: translateY(115vh); opacity: 0; }
+          .status-live-dot,
+          .card-dot {
+            animation: none;
+            opacity: 1;
+          }
+
+          .card-content {
+            transition: none;
+          }
         }
 
         .gradient-top, .gradient-bottom, .gradient-left {
@@ -1358,30 +1677,46 @@ export default function Player() {
           transform: translateY(-50%);
           display: flex;
           flex-direction: column;
-          gap: clamp(10px, 1.4vh, 16px);
+          gap: clamp(14px, 2vh, 24px);
+        }
+
+        .condition-stack-item {
+          margin: 0;
+          padding: 0;
+          border: none;
+          background: none;
+          border-radius: 0;
+        }
+
+        .display-title {
+          margin: 0;
+          font-family: 'Playfair Display', serif;
+          font-weight: 700;
+          font-size: clamp(13px, 1.45vw, 17px);
+          letter-spacing: 1.3px;
+          text-transform: uppercase;
+          line-height: 1.15;
         }
 
         .condition-stack-label {
           margin: 0;
-          font-size: clamp(8px, 0.85vw, 10px);
-          color: #7ab648;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(13px, 1.25vw, 15px);
+          letter-spacing: 1.5px;
           text-transform: uppercase;
-          letter-spacing: 1.2px;
-          font-weight: 500;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.82);
+          line-height: 1.2;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
         }
 
         .condition-stack-value {
-          margin: 2px 0 0;
-          font-size: clamp(13px, 1.5vw, 17px);
-          font-weight: 400;
-          color: #fff;
-        }
-
-        .condition-stack-divider {
-          width: 22px;
-          height: 0.5px;
-          background: rgba(122, 182, 72, 0.28);
-          margin-top: 3px;
+          margin: 4px 0 0;
+          font-size: clamp(18px, 2.2vw, 26px);
+          font-weight: 700;
+          color: #ffffff;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
         }
 
         .center-card {
@@ -1403,10 +1738,11 @@ export default function Player() {
           align-items: center;
           gap: 5px;
           margin: 0 0 clamp(10px, 1.4vh, 16px);
-          font-size: clamp(10px, 1.1vw, 12px);
-          color: var(--os-green-label);
+          font-size: clamp(10px, 1vw, 11px);
+          color: var(--os-section-header);
           letter-spacing: 2px;
           text-transform: uppercase;
+          font-weight: 500;
         }
 
         .card-dot {
@@ -1435,12 +1771,28 @@ export default function Player() {
         .slot-title {
           margin: 0;
           font-size: clamp(16px, 2vw, 22px);
-          font-weight: 300;
+          font-weight: 400;
           color: var(--os-white);
         }
 
+        .slot-title-tournament {
+          font-family: 'Playfair Display', serif;
+          font-size: clamp(14px, 1.8vw, 19px);
+          font-weight: 400;
+          color: #fff;
+        }
+
+        .slot-member-name {
+          margin: 0;
+          font-family: 'Playfair Display', serif;
+          font-size: clamp(22px, 3.2vw, 36px);
+          font-weight: 700;
+          color: #fff;
+          line-height: 1.15;
+        }
+
         .slot-live { margin: 0; font-size: 11px; color: var(--os-green-badge); }
-        .slot-round { margin: 0; font-size: clamp(11px, 1.2vw, 13px); color: var(--os-green-label); }
+        .slot-round { margin: 0; font-size: clamp(11px, 1.2vw, 13px); color: var(--os-label); }
 
         .lb-row {
           display: grid;
@@ -1452,25 +1804,73 @@ export default function Player() {
 
         .slot-pro .lb-row { grid-template-columns: 18px 24px 1fr auto; }
         .lb-row-border { border-bottom: 0.5px solid rgba(255, 255, 255, 0.06); }
-        .lb-pos { font-size: clamp(10px, 1.2vw, 13px); color: var(--os-green-label); }
+        .lb-pos { font-size: clamp(10px, 1.2vw, 13px); color: var(--os-label); }
         .lb-flag { font-size: clamp(12px, 1.3vw, 14px); }
-        .lb-name { font-size: clamp(13px, 1.6vw, 16px); color: var(--os-white); font-weight: 400; }
+        .lb-name { font-size: clamp(13px, 1.6vw, 16px); color: var(--os-white); font-weight: 500; }
         .lb-score { font-size: clamp(13px, 1.6vw, 16px); font-weight: 600; text-align: right; }
         .lb-score-under { color: var(--os-green-badge); }
         .lb-score-over { color: var(--os-red); }
         .lb-score-even { color: var(--os-white-80); }
-        .lb-thru { font-size: clamp(10px, 1.1vw, 12px); color: var(--os-green-label); text-align: right; min-width: 36px; }
-        .slot-powered { margin: 8px 0 0; font-size: 9px; color: var(--os-green-label); text-align: right; letter-spacing: 0.5px; }
+        .lb-thru { font-size: clamp(10px, 1.1vw, 12px); color: var(--os-label); text-align: right; min-width: 36px; }
+        .slot-powered { margin: 8px 0 0; font-size: clamp(10px, 1vw, 11px); color: var(--os-section-header); text-align: right; letter-spacing: 0.5px; }
 
         .slot-notice { text-align: center; padding: clamp(12px, 2vh, 20px) 0; }
-        .slot-notice-text { margin: 0; font-size: clamp(14px, 1.8vw, 20px); font-weight: 300; color: var(--os-white); line-height: 1.6; }
+        .slot-notice-text { margin: 0; font-size: clamp(14px, 1.8vw, 20px); font-weight: 400; color: var(--os-white); line-height: 1.6; }
         .slot-notice-divider { width: 48px; height: 0.5px; background: var(--os-divider); margin: clamp(14px, 2vh, 18px) auto 0; }
-        .slot-notice-byline { margin: 12px 0 0; font-size: 10px; color: var(--os-green-label); }
+        .slot-notice-byline { margin: 12px 0 0; font-size: clamp(10px, 1.05vw, 12px); color: var(--os-section-header); }
 
-        .tip-row { display: flex; align-items: flex-start; gap: 10px; padding: clamp(6px, 1vh, 9px) 0; }
-        .tip-row-border { border-bottom: 0.5px solid rgba(255, 255, 255, 0.06); }
-        .tip-row .ti { font-size: 15px; color: var(--os-green-label); flex-shrink: 0; margin-top: 1px; text-shadow: none; }
-        .tip-text { margin: 0; font-size: clamp(12px, 1.4vw, 15px); color: var(--os-white-80); line-height: 1.5; }
+        .slot-tips {
+          display: flex;
+          flex-direction: column;
+          gap: clamp(8px, 1.1vh, 12px);
+        }
+
+        .tip-card {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          padding: clamp(10px, 1.3vh, 14px) clamp(12px, 1.4vw, 16px);
+          border-radius: 10px;
+          border-left: 2px solid #9ecf7a;
+          background: rgba(122, 182, 72, 0.08);
+        }
+
+        .tip-icon-wrap {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .tip-icon-wrap .ti {
+          font-size: 18px;
+          text-shadow: none;
+        }
+
+        .tip-body {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .tip-label {
+          margin: 0 0 4px;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 1.4px;
+          text-transform: uppercase;
+        }
+
+        .tip-text {
+          margin: 0;
+          font-size: clamp(13px, 1.45vw, 16px);
+          font-weight: 500;
+          color: var(--os-body-muted);
+          line-height: 1.45;
+        }
 
         .panel-right {
           position: absolute;
@@ -1478,9 +1878,9 @@ export default function Player() {
           right: 0;
           width: 28%;
           height: 100vh;
-          background: rgba(6, 14, 8, 0.82);
-          backdrop-filter: blur(24px);
-          -webkit-backdrop-filter: blur(24px);
+          background: rgba(8, 18, 12, 0.58);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
           border-left: 0.5px solid rgba(255, 255, 255, 0.08);
           display: flex;
           flex-direction: column;
@@ -1494,12 +1894,8 @@ export default function Player() {
           min-height: 0;
           display: flex;
           flex-direction: column;
-          padding: clamp(6px, 1vh, 10px) clamp(10px, 1.3vw, 14px);
+          padding: clamp(5px, 0.75vh, 8px) clamp(10px, 1.3vw, 14px);
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
-          overflow: hidden;
-        }
-
-        .panel-section-community {
           overflow: hidden;
         }
 
@@ -1509,42 +1905,56 @@ export default function Player() {
           min-height: 0;
           display: flex;
           flex-direction: column;
-          justify-content: space-evenly;
+          justify-content: space-between;
           gap: 0;
           overflow: hidden;
         }
 
-        .panel-section-header {
-          margin: 0;
-          font-size: clamp(11px, 1.25vw, 14px);
-          color: var(--os-green-label);
-          letter-spacing: 1.8px;
-          text-transform: uppercase;
-          font-weight: 500;
-          flex-shrink: 0;
+        .panel-rows-body,
+        .community-items-body {
+          flex: 1 1 0;
+          min-height: 0;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-evenly;
+          overflow: hidden;
         }
+
+        .panel-section-header {
+          margin: clamp(4px, 0.6vh, 6px) 0 clamp(8px, 1.2vh, 12px);
+          flex-shrink: 0;
+          line-height: 1.1;
+          font-size: clamp(10px, 1.45vw, 17px);
+        }
+
+        .panel-section-header.display-title-proshop { color: var(--os-panel-heading-proshop); }
+        .panel-section-header.display-title-community { color: var(--os-panel-heading-community); }
 
         .panel-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
           gap: 8px;
-          padding: clamp(3px, 0.49vh, 4.5px) 0;
+          padding: clamp(2px, 0.35vh, 4px) 0;
           border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+          flex-shrink: 0;
         }
 
         .panel-row:last-child { border-bottom: none; }
 
         .panel-row-label {
-          font-size: clamp(11px, 1.2vw, 13px);
-          color: var(--os-green-label);
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(12px, 1.2vw, 14px);
+          font-weight: 600;
+          letter-spacing: 0.2px;
+          color: var(--os-panel-accent);
           flex-shrink: 0;
         }
 
         .panel-row-value {
-          font-size: clamp(11px, 1.2vw, 13px);
-          font-weight: 500;
-          color: var(--os-white);
+          font-size: clamp(13px, 1.25vw, 15px);
+          font-weight: 600;
+          color: #ffffff;
           text-align: right;
           line-height: 1.25;
         }
@@ -1556,61 +1966,118 @@ export default function Player() {
           align-items: flex-start;
           justify-content: space-between;
           gap: 8px;
+          flex-shrink: 0;
         }
 
         .panel-temp {
           margin: 0;
-          font-size: clamp(32px, 4.2vw, 48px);
-          font-weight: 200;
-          color: var(--os-white);
+          font-family: 'Playfair Display', serif;
+          font-size: clamp(32px, 4.2vw, 52px);
+          font-weight: 700;
+          color: #fff;
           line-height: 1;
+        }
+
+        .scene-photo-static {
+          animation: none !important;
+          will-change: auto;
+        }
+
+        .panel-temp-degree {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: 0.6em;
+          font-weight: 700;
+          line-height: 1;
+          margin: 0;
+          padding: 0;
+          vertical-align: super;
+          color: #ffffff;
+          -webkit-font-smoothing: antialiased;
+        }
+
+        .panel-temp .panel-temp-degree {
+          font-size: 0.62em;
         }
 
         .weather-meta { text-align: right; min-width: 0; }
         .weather-condition {
           margin: 0;
-          font-size: clamp(12px, 1.3vw, 15px);
-          color: var(--os-white-80);
+          font-size: clamp(13px, 1.3vw, 16px);
+          font-weight: 500;
+          color: var(--os-body-muted);
           line-height: 1.2;
         }
         .weather-feels {
           margin: 3px 0 0;
-          font-size: clamp(10px, 1.1vw, 12px);
-          color: var(--os-white-80);
-        }
-
-        .weather-stats-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: clamp(4px, 0.6vh, 6px) clamp(8px, 1vw, 12px);
-        }
-
-        .weather-stat-label {
-          margin: 0;
-          font-size: clamp(9px, 1vw, 11px);
-          color: var(--os-green-label);
-          text-transform: uppercase;
-          letter-spacing: 0.6px;
-        }
-
-        .weather-stat-value {
-          margin: 2px 0 0;
-          font-size: clamp(11px, 1.2vw, 13px);
+          font-size: clamp(12px, 1.15vw, 14px);
           font-weight: 500;
-          color: var(--os-white);
-          line-height: 1.2;
+          color: var(--os-body-muted);
         }
 
-        .rain-summary {
-          margin: 0;
-          font-size: clamp(10px, 1.1vw, 12px);
-          color: var(--os-blue);
-          line-height: 1.3;
+        .weather-feels .panel-temp-degree {
+          font-size: 0.8em;
+          font-weight: 600;
+        }
+
+        .panel-forecast-temp .panel-temp-degree {
+          font-size: 0.55em;
+        }
+
+        .weather-rows {
+          display: flex;
+          flex-direction: column;
+          width: 100%;
+          flex-shrink: 0;
+        }
+
+        .weather-row {
+          display: flex;
+          flex-direction: row;
+          justify-content: space-between;
+          align-items: center;
+          width: 100%;
+          padding: 5px 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .weather-row:last-child {
+          border-bottom: none;
+        }
+
+        .weather-row-label {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(13px, 1.25vw, 15px);
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.82);
+          flex-shrink: 0;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+        }
+
+        .weather-row-value {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(14px, 1.3vw, 16px);
+          font-weight: 600;
+          color: #ffffff;
+          text-align: right;
+          line-height: 1.25;
+          text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+        }
+
+        .now-context-line {
+          margin: clamp(4px, 0.6vh, 6px) 0 0;
+          padding: clamp(5px, 0.8vh, 8px) 0 0;
+          border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+          font-size: clamp(12px, 1.2vw, 14px);
+          color: var(--os-context-info);
+          font-weight: 500;
+          line-height: 1.35;
+          flex-shrink: 0;
         }
 
         .panel-forecast-wrap {
-          padding-top: clamp(4px, 0.6vh, 6px);
+          padding-top: clamp(3px, 0.45vh, 5px);
           border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+          flex-shrink: 0;
         }
 
         .panel-forecast { display: flex; }
@@ -1622,42 +2089,52 @@ export default function Player() {
         }
 
         .panel-forecast-col-divider { border-right: 0.5px solid rgba(255, 255, 255, 0.10); }
-        .panel-forecast-time { margin: 0; font-size: clamp(8px, 0.95vw, 10px); color: var(--os-green-label); }
-        .panel-forecast-temp { margin: 3px 0 0; font-size: clamp(12px, 1.35vw, 15px); font-weight: 300; color: var(--os-white); }
-        .panel-forecast-rain { margin: 2px 0 0; font-size: clamp(8px, 0.95vw, 10px); color: var(--os-white-80); }
-        .panel-forecast-rain-high { color: var(--os-blue); font-weight: 500; }
-        .panel-forecast-empty { margin: 0; font-size: 10px; color: var(--os-green-label); text-align: center; }
+        .panel-forecast-time { margin: 0; font-size: clamp(12px, 1.1vw, 13px); color: var(--os-label); font-weight: 500; }
+        .panel-forecast-temp { margin: 3px 0 0; font-size: clamp(14px, 1.4vw, 17px); font-weight: 600; color: #ffffff; }
+        .panel-forecast-rain { margin: 2px 0 0; font-size: clamp(12px, 1.1vw, 13px); color: var(--os-label); font-weight: 500; }
+        .panel-forecast-rain-high { color: var(--os-blue); font-weight: 600; }
+        .panel-forecast-empty { margin: 0; font-size: clamp(12px, 1.1vw, 13px); color: var(--os-section-header); text-align: center; }
 
         .sun-row {
           display: flex;
           justify-content: space-between;
           gap: 8px;
-          font-size: clamp(10px, 1.1vw, 12px);
+          font-size: clamp(12px, 1.15vw, 14px);
+          flex-shrink: 0;
         }
 
-        .sun-label { color: var(--os-green-label); }
-        .sun-value { color: var(--os-white-80); }
-
-        .community-list {
-          display: flex;
-          flex-direction: column;
-          justify-content: flex-start;
-          flex: 1;
-          min-height: 0;
-          overflow: hidden;
-        }
+        .sun-label { color: var(--os-label); font-weight: 500; }
+        .sun-value { color: #ffffff; font-weight: 600; }
 
         .community-item {
-          flex-shrink: 1;
-          min-height: 0;
-          padding: clamp(3px, 0.5vh, 5px) 0;
-          border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
+          flex-shrink: 0;
+          padding: 0;
+          border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
         }
 
         .community-item:last-child { border-bottom: none; }
-        .community-type { margin: 0; font-size: 8px; color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
-        .community-name { margin: 2px 0 0; font-size: clamp(10px, 1.1vw, 12px); font-weight: 500; color: var(--os-white); line-height: 1.15; }
-        .community-detail { margin: 2px 0 0; font-size: clamp(9px, 1vw, 11px); color: var(--os-white-80); line-height: 1.2; }
+        .community-type {
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          font-size: clamp(12px, 1.2vw, 14px);
+          font-weight: 600;
+          letter-spacing: 0.2px;
+          color: var(--os-panel-accent);
+        }
+        .community-name {
+          margin: 4px 0 0;
+          font-size: clamp(14px, 1.45vw, 17px);
+          font-weight: 600;
+          color: #fff;
+          font-family: 'Plus Jakarta Sans', sans-serif;
+          line-height: 1.2;
+        }
+        .community-detail {
+          margin: 2px 0 0;
+          font-size: clamp(12px, 1.2vw, 14px);
+          font-weight: 500;
+          color: var(--os-body-muted);
+          line-height: 1.25;
+        }
 
         .player-error {
           position: fixed;
@@ -1666,9 +2143,12 @@ export default function Player() {
           transform: translateX(-50%);
           z-index: 50;
           margin: 0;
-          padding: 6px 12px;
-          font-size: 11px;
-          background: rgba(0, 0, 0, 0.6);
+          padding: 8px 14px;
+          font-size: clamp(12px, 1.2vw, 14px);
+          font-weight: 600;
+          color: #ffffff;
+          background: rgba(80, 10, 10, 0.92);
+          border: 0.5px solid #fca5a5;
           border-radius: 6px;
         }
       `}</style>
@@ -1676,28 +2156,16 @@ export default function Player() {
       {error && <p className="player-error">Error: {error}</p>}
 
       <div className="left-zone">
-        <img
-          className="scene-photo"
-          src={coursePhotoUrl}
-          alt=""
-          aria-hidden="true"
-          style={{ filter: photoFilter }}
-        />
-        {showRain && (
-          <div className="rain-layer" aria-hidden="true">
-            {RAIN_DROPS.map((drop) => (
-              <span
-                key={drop.id}
-                className="rain-drop"
-                style={{
-                  left: drop.left,
-                  animationDelay: drop.delay,
-                  animationDuration: drop.duration,
-                }}
-              />
-            ))}
-          </div>
-        )}
+        <div className="scene-photo-wrap">
+          <img
+            className={`scene-photo${prefersReducedMotion ? ' scene-photo-static' : ''}`}
+            src={coursePhotoUrl}
+            alt=""
+            aria-hidden="true"
+            style={{ filter: photoFilter }}
+          />
+        </div>
+        <RainCanvas active={showRain} particleCount={rainParticleCount} />
         <div className="gradient-top" aria-hidden="true" />
         <div className="gradient-bottom" aria-hidden="true" />
         <div className="gradient-left" aria-hidden="true" />
@@ -1723,13 +2191,10 @@ export default function Player() {
           </div>
 
           <div className="overlay-conditions-left">
-            {conditionItems.map((item, i) => (
-              <div key={item.label}>
+            {conditionItems.map((item) => (
+              <div key={item.label} className="condition-stack-item">
                 <p className="condition-stack-label">{item.label}</p>
                 <p className="condition-stack-value">{item.value}</p>
-                {i < conditionItems.length - 1 && (
-                  <div className="condition-stack-divider" aria-hidden="true" />
-                )}
               </div>
             ))}
           </div>
@@ -1760,35 +2225,43 @@ export default function Player() {
         <section className="panel-section panel-section-weather">
           <div className="panel-section-inner">
             <div className="weather-hero">
-              <p className="panel-temp">{tempDisplay}°</p>
+              <p className="panel-temp">
+                {tempDisplay}
+                {tempDisplay !== '--' ? <span className="panel-temp-degree">°</span> : null}
+              </p>
               <div className="weather-meta">
                 <p className="weather-condition">{weather?.condition_text || '—'}</p>
-                <p className="weather-feels">Feels like {feelsDisplay}°</p>
+                <p className="weather-feels">
+                  Feels like {feelsDisplay}
+                  {feelsDisplay !== '--' ? <span className="panel-temp-degree">°</span> : null}
+                </p>
               </div>
             </div>
-            <div className="weather-stats-grid">
-              <div>
-                <p className="weather-stat-label">Wind</p>
-                <p className="weather-stat-value">{windLabel}</p>
+            <div className="weather-rows">
+              <div className="weather-row">
+                <span className="weather-row-label">Wind</span>
+                <span className="weather-row-value">{windLabel}</span>
               </div>
-              <div>
-                <p className="weather-stat-label">Humidity</p>
-                <p className="weather-stat-value">
+              <div className="weather-row">
+                <span className="weather-row-label">Humidity</span>
+                <span className="weather-row-value">
                   {weather?.humidity != null ? `${Math.round(weather.humidity)}%` : '—'}
-                </p>
+                </span>
               </div>
-              <div>
-                <p className="weather-stat-label">UV Index</p>
-                <p className="weather-stat-value" style={{ color: uvColor }}>
-                  {uvRowText}
-                </p>
+              <div className="weather-row">
+                <span className="weather-row-label">UV Index</span>
+                <span className="weather-row-value">{uvRowText}</span>
               </div>
-              <div>
-                <p className="weather-stat-label">Rain</p>
-                <p className="weather-stat-value">{rainLabelText}</p>
+              <div className="weather-row">
+                <span className="weather-row-label">Rain chance</span>
+                <span className="weather-row-value">{rainLabelText}</span>
               </div>
             </div>
-            {rainSummary ? <p className="rain-summary">{rainSummary}</p> : null}
+            {nowContextLine ? (
+              <p className="now-context-line" role="status" aria-live="polite">
+                {nowContextLine}
+              </p>
+            ) : null}
             <div className="panel-forecast-wrap">{renderPanelForecast(forecastSlots)}</div>
             <div className="sun-row">
               <span>
@@ -1805,34 +2278,42 @@ export default function Player() {
         ) : null}
 
         {showPanelProShop ? (
-        <section className="panel-section">
+        <section className="panel-section panel-section-proshop">
           <div className="panel-section-inner">
-            <p className="panel-section-header">{proShopTitle}</p>
-            {proShopRows.map((row) => (
-              <div key={row.label} className="panel-row">
-                <span className="panel-row-label">{row.label}</span>
-                <span
-                  className={`panel-row-value${row.highlight ? ' panel-row-value-highlight' : ''}`}
-                >
-                  {row.value}
-                </span>
-              </div>
-            ))}
+            <p className="display-title panel-section-header display-title-proshop">
+              {proShopTitle}
+            </p>
+            <div className="panel-rows-body">
+              {proShopRows.map((row) => (
+                <div key={row.label} className="panel-row">
+                  <span className="panel-row-label">{row.label}</span>
+                  <span
+                    className={`panel-row-value${row.highlight ? ' panel-row-value-highlight' : ''}`}
+                  >
+                    {row.value}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
         ) : null}
 
         {showPanelCommunity ? (
         <section className="panel-section panel-section-community">
-          <div className="panel-section-inner community-list">
-            <p className="panel-section-header">Community</p>
-            {communityItems.map((item) => (
-              <div key={item.key} className="community-item">
-                <p className="community-type">{item.type}</p>
-                <p className="community-name">{item.name}</p>
-                <p className="community-detail">{item.detail}</p>
-              </div>
-            ))}
+          <div className="panel-section-inner">
+            <p className="display-title panel-section-header display-title-community">
+              Community
+            </p>
+            <div className="community-items-body">
+              {communityItems.map((item) => (
+                <div key={item.key} className="community-item">
+                  <p className="community-type">{item.type}</p>
+                  <p className="community-name">{item.name}</p>
+                  <p className="community-detail">{item.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
         ) : null}

@@ -1,7 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const DEFAULT_LAT = 35.2271
-const DEFAULT_LON = -80.8431
+// Olde Sycamore Golf Club — used when club_settings has no coordinates yet
+const DEFAULT_LAT = 35.1653
+const DEFAULT_LON = -80.6093
 
 const WEATHER_CODES: Record<number, { text: string; icon: string }> = {
   0: { text: 'Clear sky', icon: '☀️' },
@@ -123,6 +124,20 @@ interface WeatherApiForecastResponse {
   error?: { code: number; message: string }
 }
 
+function findCurrentHour(hours: WeatherApiHour[], referenceEpochSec: number): WeatherApiHour | null {
+  if (!hours.length) return null
+  let best = hours[0]
+  let bestDiff = Math.abs((best.time_epoch ?? 0) - referenceEpochSec)
+  for (const hour of hours) {
+    const diff = Math.abs((hour.time_epoch ?? 0) - referenceEpochSec)
+    if (diff < bestDiff) {
+      best = hour
+      bestDiff = diff
+    }
+  }
+  return best
+}
+
 function buildHourlyForecast(hours: WeatherApiHour[], referenceEpochSec: number) {
   const upcoming = hours
     .filter((h) => (h.time_epoch ?? 0) >= referenceEpochSec - 1800)
@@ -130,6 +145,7 @@ function buildHourlyForecast(hours: WeatherApiHour[], referenceEpochSec: number)
 
   return {
     time: upcoming.map((h) => weatherApiHourToIso(h.time)),
+    time_epoch: upcoming.map((h) => h.time_epoch ?? 0),
     temperature: upcoming.map((h) => h.temp_f),
     precip_probability: upcoming.map((h) => h.chance_of_rain),
     weather_code: upcoming.map((h) => mapWeatherApiConditionCode(h.condition.code)),
@@ -214,7 +230,11 @@ Deno.serve(async (_req) => {
     const mapping = wmoMapping(wmoCode)
     const referenceEpochSec =
       current.last_updated_epoch ?? Math.floor(Date.now() / 1000)
-    const hourlyForecast = buildHourlyForecast(forecastDay.hour ?? [], referenceEpochSec)
+    const forecastHours = forecastDay.hour ?? []
+    const currentHour = findCurrentHour(forecastHours, referenceEpochSec)
+    const hourlyForecast = buildHourlyForecast(forecastHours, referenceEpochSec)
+    const precipProbability =
+      currentHour?.chance_of_rain ?? forecastDay.day.daily_chance_of_rain
 
     await supabase.from('weather_cache').delete().neq('id', 0)
 
@@ -229,7 +249,7 @@ Deno.serve(async (_req) => {
       icon: mapping.icon,
       cloud_cover: current.cloud,
       uv_index: current.uv,
-      precip_probability: forecastDay.day.daily_chance_of_rain,
+      precip_probability: precipProbability,
       is_day: current.is_day,
       hourly_forecast: JSON.stringify(hourlyForecast),
       sunrise_at: astroToTimestamptz(forecastDay.date, forecastDay.astro.sunrise),
@@ -252,7 +272,7 @@ Deno.serve(async (_req) => {
         condition: current.condition.text,
         cloud_cover: current.cloud,
         uv_index: current.uv,
-        precip_probability: forecastDay.day.daily_chance_of_rain,
+        precip_probability: precipProbability,
         is_day: current.is_day,
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },

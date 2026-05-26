@@ -85,9 +85,9 @@ function getStatusBadgeStyle(status) {
 function resolvePanelBg(panelBg, panelBgCustom) {
   if (panelBg === 'custom') return panelBgCustom || '#0a1a0a'
   const presets = {
-    dark_green: 'rgba(6,14,8,0.82)',
-    dark_navy: 'rgba(6,12,24,0.82)',
-    dark_charcoal: 'rgba(18,18,18,0.82)',
+    dark_green: 'rgba(8,18,12,0.58)',
+    dark_navy: 'rgba(6,12,24,0.58)',
+    dark_charcoal: 'rgba(18,18,18,0.58)',
   }
   return presets[panelBg] || presets.dark_green
 }
@@ -108,9 +108,9 @@ function formatClubScore(score) {
 }
 
 function achievementTypeLabel(type) {
-  return String(type || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toUpperCase()
+  const s = String(type || 'Achievement').trim()
+  if (!s) return 'Achievement'
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 function getActivePreviewSlot(displaySlots, dailyNote) {
@@ -231,7 +231,7 @@ function buildCommunityItems(communityItems) {
   for (const e of events.slice(0, 3)) {
     items.push({
       key: e.id,
-      type: 'UPCOMING',
+      type: 'Upcoming',
       name: e.name,
       detail: e.detail,
     })
@@ -368,30 +368,34 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
               <section className="panel-section panel-section-weather">
                 <div className="panel-section-inner">
                   <div className="weather-hero">
-                    <p className="panel-temp">{wx.temperature ?? '—'}°</p>
+                    <p className="panel-temp">
+                      {wx.temperature ?? '—'}
+                      {wx.temperature != null ? <span className="panel-temp-degree">°</span> : null}
+                    </p>
                     <div className="weather-meta">
                       <p className="weather-condition">{wx.condition ?? '—'}</p>
                       <p className="weather-feels">
-                        Feels like {wx.feelsLike ?? '—'}°
+                        Feels like {wx.feelsLike ?? '—'}
+                        {wx.feelsLike != null ? <span className="panel-temp-degree">°</span> : null}
                       </p>
                     </div>
                   </div>
-                  <div className="weather-stats-grid">
-                    <div>
-                      <p className="weather-stat-label">Wind</p>
-                      <p className="weather-stat-value">{wx.wind ?? '—'}</p>
+                  <div className="panel-rows-body weather-stats-body">
+                    <div className="panel-row">
+                      <span className="panel-row-label weather-stat-label-wind">Wind</span>
+                      <span className="panel-row-value">{wx.wind ?? '—'}</span>
                     </div>
-                    <div>
-                      <p className="weather-stat-label">Humidity</p>
-                      <p className="weather-stat-value">{wx.humidity ?? '—'}</p>
+                    <div className="panel-row">
+                      <span className="panel-row-label weather-stat-label-humidity">Humidity</span>
+                      <span className="panel-row-value">{wx.humidity ?? '—'}</span>
                     </div>
-                    <div>
-                      <p className="weather-stat-label">UV Index</p>
-                      <p className="weather-stat-value">{wx.uv ?? '—'}</p>
+                    <div className="panel-row">
+                      <span className="panel-row-label weather-stat-label-uv">UV</span>
+                      <span className="panel-row-value">{wx.uv ?? '—'}</span>
                     </div>
-                    <div>
-                      <p className="weather-stat-label">Rain</p>
-                      <p className="weather-stat-value">{wx.rain ?? '—'}</p>
+                    <div className="panel-row">
+                      <span className="panel-row-label weather-stat-label-rain">Rain</span>
+                      <span className="panel-row-value">{wx.rain ?? '—'}</span>
                     </div>
                   </div>
                   <div className="panel-forecast-wrap">
@@ -402,7 +406,10 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
                           className={`panel-forecast-col${i < forecastSlots.length - 1 ? ' panel-forecast-col-divider' : ''}`}
                         >
                           <p className="panel-forecast-time">{slot.time}</p>
-                          <p className="panel-forecast-temp">{slot.temp}°</p>
+                          <p className="panel-forecast-temp">
+                            {slot.temp}
+                            {slot.temp != null ? <span className="panel-temp-degree">°</span> : null}
+                          </p>
                           <p className="panel-forecast-rain">{slot.precip}%</p>
                         </div>
                       ))}
@@ -423,34 +430,38 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
             ) : null}
 
             {showProShop ? (
-              <section className="panel-section">
+              <section className="panel-section panel-section-proshop">
                 <div className="panel-section-inner">
                   <p className="panel-section-header">{club.pro_shop_title || 'Pro Shop & Dining'}</p>
-                  {proRows.map((row) => (
-                    <div key={row.id} className="panel-row">
-                      <span className="panel-row-label">{row.label}</span>
-                      <span
-                        className={`panel-row-value${row.highlight ? ' panel-row-value-highlight' : ''}`}
-                      >
-                        {row.value}
-                      </span>
-                    </div>
-                  ))}
+                  <div className="panel-rows-body">
+                    {proRows.map((row) => (
+                      <div key={row.id} className="panel-row">
+                        <span className="panel-row-label">{row.label}</span>
+                        <span
+                          className={`panel-row-value${row.highlight ? ' panel-row-value-highlight' : ''}`}
+                        >
+                          {row.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </section>
             ) : null}
 
             {showCommunity ? (
-              <section className="panel-section">
-                <div className="panel-section-inner community-list">
+              <section className="panel-section panel-section-community">
+                <div className="panel-section-inner">
                   <p className="panel-section-header">Community</p>
-                  {communityItems.map((item) => (
-                    <div key={item.key} className="community-item">
-                      <p className="community-type">{item.type}</p>
-                      <p className="community-name">{item.name}</p>
-                      <p className="community-detail">{item.detail}</p>
-                    </div>
-                  ))}
+                  <div className="community-items-body">
+                    {communityItems.map((item) => (
+                      <div key={item.key} className="community-item">
+                        <p className="community-type">{item.type}</p>
+                        <p className="community-name">{item.name}</p>
+                        <p className="community-detail">{item.detail}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </section>
             ) : null}
@@ -463,8 +474,6 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
 
 // Player.jsx styles scoped to 1920×1080 preview (same class names, fixed canvas size).
 const PLAYER_PREVIEW_CSS = `
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&display=swap');
-
   .player-preview-wrapper {
     width: 100%;
     aspect-ratio: 16 / 9;
@@ -485,7 +494,7 @@ const PLAYER_PREVIEW_CSS = `
     left: 0;
     transform-origin: top left;
     overflow: hidden;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Plus Jakarta Sans', sans-serif;
     color: #fff;
     --os-green-label: #7ab648;
     --os-white: #ffffff;
@@ -740,7 +749,7 @@ const PLAYER_PREVIEW_CSS = `
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding: 9px 10.5px;
+    padding: 7px 10.5px;
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
     overflow: hidden;
   }
@@ -748,6 +757,17 @@ const PLAYER_PREVIEW_CSS = `
   .player-preview-root .panel-section-inner {
     flex: 1 1 0;
     flex-shrink: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  .player-preview-root .panel-rows-body,
+  .player-preview-root .community-items-body {
+    flex: 1 1 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -762,6 +782,7 @@ const PLAYER_PREVIEW_CSS = `
     letter-spacing: 1.8px;
     text-transform: uppercase;
     font-weight: 500;
+    line-height: 1.1;
   }
 
   .player-preview-root .panel-row {
@@ -776,8 +797,20 @@ const PLAYER_PREVIEW_CSS = `
   .player-preview-root .panel-row:last-child { border-bottom: none; }
 
   .player-preview-root .panel-row-label {
+    font-family: 'Plus Jakarta Sans', sans-serif;
     font-size: 13px;
-    color: var(--os-green-label);
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #b8d4a0;
+  }
+
+  .player-preview-root .weather-stat-label-wind { color: #8ec8f0; }
+  .player-preview-root .weather-stat-label-humidity { color: #a8dce8; }
+  .player-preview-root .weather-stat-label-uv { color: #f0d080; }
+  .player-preview-root .weather-stat-label-rain { color: #7eb8f5; }
+
+  .player-preview-root .weather-stats-body {
+    flex-shrink: 0;
   }
 
   .player-preview-root .panel-row-value {
@@ -801,30 +834,31 @@ const PLAYER_PREVIEW_CSS = `
     font-size: 48px;
     font-weight: 200;
     line-height: 1;
+    display: inline-flex;
+    align-items: flex-start;
+  }
+
+  .player-preview-root .panel-temp-degree {
+    font-size: 0.52em;
+    font-weight: 600;
+    line-height: 1;
+    margin-left: 0.04em;
+    position: relative;
+    top: 0.12em;
+  }
+
+  .player-preview-root .weather-feels .panel-temp-degree {
+    font-size: 0.65em;
+    top: 0.05em;
+  }
+
+  .player-preview-root .panel-forecast-temp .panel-temp-degree {
+    font-size: 0.55em;
+    top: 0.1em;
   }
 
   .player-preview-root .weather-condition { margin: 0; font-size: 15px; color: rgba(255,255,255,0.82); }
   .player-preview-root .weather-feels { margin: 3px 0 0; font-size: 12px; color: rgba(255,255,255,0.82); }
-
-  .player-preview-root .weather-stats-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 12px;
-  }
-
-  .player-preview-root .weather-stat-label {
-    margin: 0;
-    font-size: 11px;
-    color: var(--os-green-label);
-    text-transform: uppercase;
-  }
-
-  .player-preview-root .weather-stat-value {
-    margin: 2px 0 0;
-    font-size: 13px;
-    font-weight: 500;
-    color: #fff;
-  }
 
   .player-preview-root .panel-forecast-wrap {
     padding-top: 6px;
@@ -852,21 +886,20 @@ const PLAYER_PREVIEW_CSS = `
   .player-preview-root .sun-label { color: var(--os-green-label); }
   .player-preview-root .sun-value { color: rgba(255,255,255,0.82); }
 
-  .player-preview-root .community-list {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-evenly;
-    flex: 1;
-    min-height: 0;
-  }
-
   .player-preview-root .community-item {
-    padding: 4.5px 0;
+    padding: 0;
     border-bottom: 0.5px solid rgba(255, 255, 255, 0.05);
   }
 
   .player-preview-root .community-item:last-child { border-bottom: none; }
-  .player-preview-root .community-type { margin: 0; font-size: 9.5px; color: var(--os-green-label); letter-spacing: 1px; text-transform: uppercase; }
+  .player-preview-root .community-type {
+    margin: 0;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: #b8d4a0;
+    letter-spacing: 0.2px;
+  }
   .player-preview-root .community-name { margin: 2px 0 0; font-size: 12px; font-weight: 500; line-height: 1.15; }
   .player-preview-root .community-detail { margin: 2px 0 0; font-size: 10px; color: rgba(255,255,255,0.82); line-height: 1.2; }
 `

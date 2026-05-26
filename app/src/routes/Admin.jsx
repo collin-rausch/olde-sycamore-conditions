@@ -244,6 +244,17 @@ async function refreshWeatherAfterPublish() {
   }
 }
 
+function sanitizeProShopRows(rows) {
+  return (rows || []).map((row) => {
+    let label = String(row.label ?? '').trim()
+    let value = String(row.value ?? '').trim()
+    if (/^app creatore$/i.test(label)) label = 'Early bird'
+    label = label.replace(/app creatore/gi, 'Early bird')
+    value = value.replace(/app creatore/gi, '7–9 AM · from $45')
+    return { ...row, label, value }
+  })
+}
+
 function defaultProShopRows() {
   return [
     { id: uid(), label: 'Pro shop', value: '7 AM – 6 PM', enabled: true },
@@ -251,6 +262,7 @@ function defaultProShopRows() {
     { id: uid(), label: 'Happy hour', value: '4–7 PM · $5 drafts', enabled: true, highlight: true },
     { id: uid(), label: "Today's special", value: 'Prime Rib Night', enabled: true },
     { id: uid(), label: 'Cart rental', value: '$20 · Paths only today', enabled: true },
+    { id: uid(), label: 'Early bird', value: '7–9 AM · from $45', enabled: true },
   ]
 }
 
@@ -324,7 +336,7 @@ function defaultClubSettings() {
     logo_url: DEFAULT_LOGO_URL,
     accent_color: '#7ab648',
     panel_bg: 'dark_green',
-    panel_bg_custom: '#0a1a0a',
+    panel_bg_custom: 'rgba(8, 18, 12, 0.58)',
     bg_photo_url: DEFAULT_BG_URL,
     pro_shop_title: 'Pro Shop & Dining',
     pro_shop_rows: defaultProShopRows(),
@@ -361,9 +373,9 @@ function parseGreensSpeed(text) {
 }
 
 function achievementTypeLabel(type) {
-  return String(type || '')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .toUpperCase()
+  const s = String(type || 'Achievement').trim()
+  if (!s) return 'Achievement'
+  return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
 async function geocodeLocation(locationName) {
@@ -702,6 +714,7 @@ export default function Admin() {
 
   const [previewWeather, setPreviewWeather] = useState(null)
   const [previewWeatherLoading, setPreviewWeatherLoading] = useState(true)
+  const publishedLocationRef = useRef('')
 
   const activeNav = useMemo(() => NAV_ITEMS.find((n) => n.id === activeSection), [activeSection])
 
@@ -766,6 +779,7 @@ export default function Admin() {
     if (settingsRes.data) {
       const row = settingsRes.data
       setSettingsRowId(row.id)
+      publishedLocationRef.current = (row.location_name ?? 'Charlotte, NC').trim()
       setClub({
         club_tagline: row.club_tagline ?? defaultClubSettings().club_tagline,
         show_tagline: parseShowTagline(row.show_tagline),
@@ -775,10 +789,12 @@ export default function Admin() {
         logo_url: row.logo_url ?? DEFAULT_LOGO_URL,
         accent_color: row.accent_color ?? '#7ab648',
         panel_bg: row.panel_bg ?? 'dark_green',
-        panel_bg_custom: row.panel_bg_custom ?? '#0a1a0a',
+        panel_bg_custom: row.panel_bg_custom ?? 'rgba(8, 18, 12, 0.58)',
         bg_photo_url: row.bg_photo_url ?? DEFAULT_BG_URL,
         pro_shop_title: row.pro_shop_title ?? 'Pro Shop & Dining',
-        pro_shop_rows: parseJson(row.pro_shop_rows, defaultProShopRows()),
+        pro_shop_rows: sanitizeProShopRows(
+          parseJson(row.pro_shop_rows, defaultProShopRows()),
+        ),
         community_items: parseJson(row.community_items, defaultCommunity()),
         tournament_data: parseJson(row.tournament_data, defaultTournament()),
         display_slots: parseJson(row.display_slots, defaultDisplaySlots()),
@@ -851,17 +867,23 @@ export default function Admin() {
     setPublished(false)
 
     try {
-      let latitude = club.latitude
-      let longitude = club.longitude
-      try {
-        const geo = await geocodeLocation(club.location_name)
-        latitude = geo.latitude
-        longitude = geo.longitude
-      } catch (geoErr) {
-        if (!latitude || !longitude) {
-          throw geoErr
+      const locationTrimmed = club.location_name.trim()
+      let latitude = Number(club.latitude)
+      let longitude = Number(club.longitude)
+      const coordsMissing = !Number.isFinite(latitude) || !Number.isFinite(longitude)
+      const locationChanged = locationTrimmed !== publishedLocationRef.current
+
+      if (coordsMissing || locationChanged) {
+        try {
+          const geo = await geocodeLocation(locationTrimmed)
+          latitude = geo.latitude
+          longitude = geo.longitude
+        } catch (geoErr) {
+          if (coordsMissing) {
+            throw geoErr
+          }
+          console.warn('[Admin] Geocode failed, using saved coordinates:', geoErr)
         }
-        console.warn('[Admin] Geocode failed, using saved coordinates:', geoErr)
       }
 
       let logoUrl = club.logo_url
@@ -876,7 +898,7 @@ export default function Admin() {
       const settingsPayload = {
         club_tagline: club.club_tagline.trim(),
         show_tagline: club.show_tagline === true,
-        location_name: club.location_name.trim(),
+        location_name: locationTrimmed,
         latitude,
         longitude,
         logo_url: logoUrl,
@@ -885,7 +907,7 @@ export default function Admin() {
         panel_bg_custom: club.panel_bg_custom,
         bg_photo_url: bgUrl,
         pro_shop_title: club.pro_shop_title.trim(),
-        pro_shop_rows: club.pro_shop_rows,
+        pro_shop_rows: sanitizeProShopRows(club.pro_shop_rows),
         community_items: club.community_items,
         tournament_data: club.tournament_data,
         display_slots: club.display_slots,
@@ -991,6 +1013,8 @@ export default function Admin() {
       console.log('[Admin] course_status saved:', courseData)
       if (courseData?.id) setCourseRowId(courseData.id)
 
+      publishedLocationRef.current = locationTrimmed
+
       await refreshWeatherAfterPublish()
 
       updateClub({
@@ -1082,13 +1106,14 @@ export default function Admin() {
       <LocationAutocomplete
         value={club.location_name}
         onChange={(v) => updateClub({ location_name: v })}
-        onSelect={({ locationName, latitude, longitude }) =>
+        onSelect={({ locationName, latitude, longitude }) => {
+          publishedLocationRef.current = locationName.trim()
           updateClub({
             location_name: locationName,
             latitude,
             longitude,
           })
-        }
+        }}
       />
       <p style={S.hint}>
         We&apos;ll look up coordinates automatically for weather data and sunrise/sunset times
@@ -1569,7 +1594,7 @@ export default function Admin() {
           height: 100vh;
           overflow: hidden;
           background: #0a0f0a;
-          font-family: Inter, system-ui, -apple-system, sans-serif;
+          font-family: 'Plus Jakarta Sans', sans-serif;
           color: #fff;
           -webkit-font-smoothing: antialiased;
         }
@@ -1974,7 +1999,7 @@ const S = {
     padding: '8px 0',
     borderBottom: '0.5px solid rgba(255,255,255,0.06)',
   },
-  achievementType: { margin: 0, fontSize: 8, letterSpacing: 1.2, textTransform: 'uppercase' },
+  achievementType: { margin: 0, fontSize: 8, letterSpacing: 0.2 },
   achievementName: { margin: '2px 0 0', fontSize: 11, fontWeight: 500 },
   achievementDetail: { margin: '2px 0 0', fontSize: 10, color: 'rgba(255,255,255,0.55)' },
   eventRow: { display: 'flex', alignItems: 'flex-start', gap: 6, padding: '6px 0' },
