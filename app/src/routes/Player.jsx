@@ -1198,8 +1198,8 @@ export default function Player() {
           --os-white-55: rgba(255, 255, 255, 0.55);
           --os-white-40: rgba(255, 255, 255, 0.40);
           --os-divider: rgba(255, 255, 255, 0.07);
-          --os-card: rgba(0, 0, 0, 0.20);
-          --os-card-border: rgba(255, 255, 255, 0.13);
+          --os-card: rgba(0, 0, 0, 0.28);
+          --os-card-border: rgba(255, 255, 255, 0.10);
           --os-green-badge: #4ade80;
           --os-blue: #60a5fa;
           --os-amber: #fbbf24;
@@ -1358,13 +1358,13 @@ export default function Player() {
           transform: translateY(-50%);
           display: flex;
           flex-direction: column;
-          gap: clamp(12px, 1.6vh, 20px);
+          gap: clamp(10px, 1.4vh, 16px);
         }
 
         .condition-stack-label {
           margin: 0;
-          font-size: clamp(9px, 0.9vw, 11px);
-          color: var(--os-green-label);
+          font-size: clamp(8px, 0.85vw, 10px);
+          color: #7ab648;
           text-transform: uppercase;
           letter-spacing: 1.2px;
           font-weight: 500;
@@ -1372,13 +1372,13 @@ export default function Player() {
 
         .condition-stack-value {
           margin: 2px 0 0;
-          font-size: clamp(17px, 2.1vw, 24px);
+          font-size: clamp(13px, 1.5vw, 17px);
           font-weight: 400;
-          color: var(--os-white);
+          color: #fff;
         }
 
         .condition-stack-divider {
-          width: 26px;
+          width: 22px;
           height: 0.5px;
           background: rgba(122, 182, 72, 0.28);
           margin-top: 3px;
@@ -1391,8 +1391,8 @@ export default function Player() {
           transform: translate(-50%, -50%);
           width: clamp(300px, 38vw, 480px);
           background: var(--os-card);
-          backdrop-filter: blur(22px);
-          -webkit-backdrop-filter: blur(22px);
+          backdrop-filter: blur(28px);
+          -webkit-backdrop-filter: blur(28px);
           border: 0.5px solid var(--os-card-border);
           border-radius: 18px;
           padding: clamp(16px, 2.2vh, 24px) clamp(18px, 2.2vw, 24px);
