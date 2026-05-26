@@ -33,9 +33,6 @@ export default function Editor() {
           setContext(currentContext)
           setInitialized(true)
 
-
-
-
           // Register callback so ScreenCloud can ask for the latest config on save
           sc.onRequestConfigUpdate(() => {
             const latest = configRef.current

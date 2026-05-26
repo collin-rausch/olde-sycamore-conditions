@@ -1198,7 +1198,7 @@ export default function Player() {
           --os-white-55: rgba(255, 255, 255, 0.55);
           --os-white-40: rgba(255, 255, 255, 0.40);
           --os-divider: rgba(255, 255, 255, 0.07);
-          --os-card: rgba(0, 0, 0, 0.28);
+          --os-card: rgba(0, 0, 0, 0.22);
           --os-card-border: rgba(255, 255, 255, 0.10);
           --os-green-badge: #4ade80;
           --os-blue: #60a5fa;
@@ -1390,10 +1390,10 @@ export default function Player() {
           left: 62%;
           transform: translate(-50%, -50%);
           width: clamp(300px, 38vw, 480px);
-          background: var(--os-card);
+          background: rgba(0, 0, 0, 0.22);
           backdrop-filter: blur(28px);
           -webkit-backdrop-filter: blur(28px);
-          border: 0.5px solid var(--os-card-border);
+          border: 0.5px solid rgba(255, 255, 255, 0.10);
           border-radius: 18px;
           padding: clamp(16px, 2.2vh, 24px) clamp(18px, 2.2vw, 24px);
         }
