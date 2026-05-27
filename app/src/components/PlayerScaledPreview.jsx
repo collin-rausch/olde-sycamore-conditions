@@ -425,7 +425,9 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
                   {communityAchievements[0] ? (
                     <div className="panel-block">
                       <div className="community-item community-rotate-slot">
-                        <p className="community-type">{communityAchievements[0].type}</p>
+                        <p className="community-type">
+                          {achievementTypeLabel(communityAchievements[0].type)}
+                        </p>
                         <p className="community-name">{communityAchievements[0].name}</p>
                         {communityAchievements[0].detail ? (
                           <p className="community-detail">{communityAchievements[0].detail}</p>
