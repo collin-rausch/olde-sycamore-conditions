@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { buildCommunitySections } from '../lib/communityDisplay'
 
 const PREVIEW_WIDTH = 1920
 const PREVIEW_HEIGHT = 1080
@@ -80,16 +81,6 @@ function getStatusBadgeStyle(status) {
     border: '0.5px solid rgba(74,222,128,0.55)',
     color: '#4ade80',
   }
-}
-
-function resolvePanelBg(panelBg, panelBgCustom) {
-  if (panelBg === 'custom') return panelBgCustom || '#0a1a0a'
-  const presets = {
-    dark_green: 'rgba(8,18,12,0.58)',
-    dark_navy: 'rgba(6,12,24,0.58)',
-    dark_charcoal: 'rgba(18,18,18,0.58)',
-  }
-  return presets[panelBg] || presets.dark_green
 }
 
 function parseTournamentScore(score) {
@@ -215,36 +206,12 @@ function renderSlotContent(slot, club, course) {
   }
 }
 
-function buildCommunityItems(communityItems) {
-  const items = []
-  const achievements = (communityItems?.achievements || []).filter((a) => a.enabled !== false)
-  achievements.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
-  for (const a of achievements.slice(0, 5)) {
-    items.push({
-      key: a.id,
-      type: achievementTypeLabel(a.type),
-      name: a.name,
-      detail: a.detail,
-    })
-  }
-  const events = (communityItems?.events || []).filter((e) => e.enabled !== false)
-  for (const e of events.slice(0, 3)) {
-    items.push({
-      key: e.id,
-      type: 'Upcoming',
-      name: e.name,
-      detail: e.detail,
-    })
-  }
-  return items
-}
 
 export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
   const wrapperRef = useRef(null)
   const [scale, setScale] = useState(0.5)
 
   const accentColor = club.accent_color || '#7ab648'
-  const panelBg = resolvePanelBg(club.panel_bg, club.panel_bg_custom)
   const logoUrl = club.logo_url || DEFAULT_LOGO_URL
   const photoUrl = club.bg_photo_url || DEFAULT_BG_URL
   const dailyNote = course.daily_note?.trim() || ''
@@ -257,10 +224,12 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
     () => (club.pro_shop_rows || []).filter((r) => r.enabled !== false).slice(0, 8),
     [club.pro_shop_rows],
   )
-  const communityItems = useMemo(
-    () => buildCommunityItems(club.community_items),
+  const communitySections = useMemo(
+    () => buildCommunitySections(club.community_items),
     [club.community_items],
   )
+  const communityAchievements = communitySections.achievements
+  const communityEvents = communitySections.events
   const activeSlot = useMemo(
     () => getActivePreviewSlot(club.display_slots, dailyNote),
     [club.display_slots, dailyNote],
@@ -318,12 +287,14 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
             transform: `scale(${scale})`,
           }}
         >
-          <div className="left-zone">
+          <div className="scene-backdrop" aria-hidden="true">
             <img className="scene-photo" src={photoUrl} alt="" aria-hidden="true" />
-            <div className="gradient-top" aria-hidden="true" />
-            <div className="gradient-bottom" aria-hidden="true" />
-            <div className="gradient-left" aria-hidden="true" />
+            <div className="gradient-top" />
+            <div className="gradient-bottom" />
+            <div className="gradient-left" />
+          </div>
 
+          <div className="left-zone">
             <div className="left-ui">
               <div className="overlay-top-left">
                 <img className="overlay-logo" src={logoUrl} alt="" />
@@ -363,67 +334,61 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
             </div>
           </div>
 
-          <div className="panel-right" style={{ background: panelBg }}>
+          <div className="panel-right">
             {showWeather ? (
               <section className="panel-section panel-section-weather">
                 <div className="panel-section-inner">
-                  <div className="weather-hero">
-                    <p className="panel-temp">
-                      {wx.temperature ?? '—'}
-                      {wx.temperature != null ? <span className="panel-temp-degree">°</span> : null}
-                    </p>
-                    <div className="weather-meta">
-                      <p className="weather-condition">{wx.condition ?? '—'}</p>
-                      <p className="weather-feels">
-                        Feels like {wx.feelsLike ?? '—'}
-                        {wx.feelsLike != null ? <span className="panel-temp-degree">°</span> : null}
+                  <div className="panel-block">
+                    <div className="weather-hero">
+                      <p className="panel-temp">
+                        {wx.temperature ?? '—'}
+                        {wx.temperature != null ? <span className="panel-temp-degree">°</span> : null}
                       </p>
+                      <div className="weather-meta">
+                        <p className="weather-condition">{wx.condition ?? '—'}</p>
+                        <p className="weather-feels">
+                          Feels like {wx.feelsLike ?? '—'}
+                          {wx.feelsLike != null ? <span className="panel-temp-degree">°</span> : null}
+                        </p>
+                      </div>
                     </div>
+                    <dl className="weather-rows">
+                      <div className="weather-row">
+                        <dt className="weather-row-label">Wind</dt>
+                        <dd className="weather-row-value">{wx.wind ?? '—'}</dd>
+                      </div>
+                      <div className="weather-row">
+                        <dt className="weather-row-label">Humidity</dt>
+                        <dd className="weather-row-value">{wx.humidity ?? '—'}</dd>
+                      </div>
+                      <div className="weather-row">
+                        <dt className="weather-row-label">UV Index</dt>
+                        <dd className="weather-row-value">{wx.uv ?? '—'}</dd>
+                      </div>
+                      <div className="weather-row">
+                        <dt className="weather-row-label">Sunset</dt>
+                        <dd className="weather-row-value">{wx.sunset ?? '—'}</dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className="panel-rows-body weather-stats-body">
-                    <div className="panel-row">
-                      <span className="panel-row-label weather-stat-label-wind">Wind</span>
-                      <span className="panel-row-value">{wx.wind ?? '—'}</span>
+                  <div className="panel-block">
+                    <div className="panel-forecast-wrap">
+                      <div className="panel-forecast">
+                        {forecastSlots.map((slot, i) => (
+                          <div
+                            key={`${slot.time}-${i}`}
+                            className={`panel-forecast-col${i < forecastSlots.length - 1 ? ' panel-forecast-col-divider' : ''}`}
+                          >
+                            <p className="panel-forecast-time">{slot.time}</p>
+                            <p className="panel-forecast-temp">
+                              {slot.temp}
+                              {slot.temp != null ? <span className="panel-temp-degree">°</span> : null}
+                            </p>
+                            <p className="panel-forecast-rain">{slot.precip}%</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="panel-row">
-                      <span className="panel-row-label weather-stat-label-humidity">Humidity</span>
-                      <span className="panel-row-value">{wx.humidity ?? '—'}</span>
-                    </div>
-                    <div className="panel-row">
-                      <span className="panel-row-label weather-stat-label-uv">UV</span>
-                      <span className="panel-row-value">{wx.uv ?? '—'}</span>
-                    </div>
-                    <div className="panel-row">
-                      <span className="panel-row-label weather-stat-label-rain">Rain</span>
-                      <span className="panel-row-value">{wx.rain ?? '—'}</span>
-                    </div>
-                  </div>
-                  <div className="panel-forecast-wrap">
-                    <div className="panel-forecast">
-                      {forecastSlots.map((slot, i) => (
-                        <div
-                          key={`${slot.time}-${i}`}
-                          className={`panel-forecast-col${i < forecastSlots.length - 1 ? ' panel-forecast-col-divider' : ''}`}
-                        >
-                          <p className="panel-forecast-time">{slot.time}</p>
-                          <p className="panel-forecast-temp">
-                            {slot.temp}
-                            {slot.temp != null ? <span className="panel-temp-degree">°</span> : null}
-                          </p>
-                          <p className="panel-forecast-rain">{slot.precip}%</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="sun-row">
-                    <span>
-                      <span className="sun-label">Sunrise </span>
-                      <span className="sun-value">{wx.sunrise ?? '—'}</span>
-                    </span>
-                    <span>
-                      <span className="sun-label">Sunset </span>
-                      <span className="sun-value">{wx.sunset ?? '—'}</span>
-                    </span>
                   </div>
                 </div>
               </section>
@@ -432,8 +397,10 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
             {showProShop ? (
               <section className="panel-section panel-section-proshop">
                 <div className="panel-section-inner">
-                  <p className="panel-section-header">{club.pro_shop_title || 'Pro Shop & Dining'}</p>
-                  <div className="panel-rows-body">
+                  <p className="display-title panel-section-header display-title-proshop">
+                    {club.pro_shop_title || 'Pro Shop & Dining'}
+                  </p>
+                  <div className="panel-block">
                     {proRows.map((row) => (
                       <div key={row.id} className="panel-row">
                         <span className="panel-row-label">{row.label}</span>
@@ -452,16 +419,37 @@ export default function PlayerScaledPreview({ club, course, weatherDisplay }) {
             {showCommunity ? (
               <section className="panel-section panel-section-community">
                 <div className="panel-section-inner">
-                  <p className="panel-section-header">Community</p>
-                  <div className="community-items-body">
-                    {communityItems.map((item) => (
-                      <div key={item.key} className="community-item">
-                        <p className="community-type">{item.type}</p>
-                        <p className="community-name">{item.name}</p>
-                        <p className="community-detail">{item.detail}</p>
+                  <p className="display-title panel-section-header display-title-community">
+                    Community
+                  </p>
+                  {communityAchievements[0] ? (
+                    <div className="panel-block">
+                      <div className="community-item community-rotate-slot">
+                        <p className="community-type">{communityAchievements[0].type}</p>
+                        <p className="community-name">{communityAchievements[0].name}</p>
+                        {communityAchievements[0].detail ? (
+                          <p className="community-detail">{communityAchievements[0].detail}</p>
+                        ) : null}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ) : null}
+                  {communityEvents.length > 0 ? (
+                    <div className="panel-subsection-events">
+                      <p className="display-title panel-section-header display-title-community">
+                        Events
+                      </p>
+                      <div className="community-events-stack">
+                        {communityEvents.map((item) => (
+                          <div key={item.key} className="community-event-row">
+                            <p className="community-name">{item.name}</p>
+                            {item.detail ? (
+                              <p className="community-detail">{item.detail}</p>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </section>
             ) : null}
@@ -494,6 +482,7 @@ const PLAYER_PREVIEW_CSS = `
     left: 0;
     transform-origin: top left;
     overflow: hidden;
+    background: #000000;
     font-family: 'Plus Jakarta Sans', sans-serif;
     color: #fff;
     --os-green-label: #7ab648;
@@ -512,6 +501,14 @@ const PLAYER_PREVIEW_CSS = `
     box-sizing: border-box;
   }
 
+  .player-preview-root .scene-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .player-preview-root .left-zone {
     position: absolute;
     top: 0;
@@ -519,7 +516,8 @@ const PLAYER_PREVIEW_CSS = `
     bottom: 0;
     width: 72%;
     overflow: hidden;
-    z-index: 0;
+    z-index: 10;
+    pointer-events: none;
   }
 
   .player-preview-root .scene-photo {
@@ -735,54 +733,202 @@ const PLAYER_PREVIEW_CSS = `
     right: 0;
     bottom: 0;
     width: 28%;
-    backdrop-filter: blur(24px);
-    border-left: 0.5px solid rgba(255, 255, 255, 0.08);
+    background: transparent;
     display: flex;
     flex-direction: column;
+    justify-content: space-evenly;
+    gap: 10px;
+    padding-block: 8px;
     overflow: hidden;
     z-index: 20;
   }
 
   .player-preview-root .panel-section {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     flex-shrink: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    padding: 7px 10.5px;
-    border-bottom: 0.5px solid rgba(255, 255, 255, 0.07);
+    padding: 0 10.5px;
+    border-bottom: none;
     overflow: hidden;
   }
 
   .player-preview-root .panel-section-inner {
-    flex: 1 1 0;
-    flex-shrink: 1;
+    flex: 0 1 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
-    gap: 0;
+    justify-content: flex-start;
+    align-items: stretch;
+    gap: 10px;
     overflow: hidden;
+    padding: 9px 10px;
+    border-radius: 8px;
+    border: 0.5px solid rgba(122, 182, 72, 0.2);
+    background: linear-gradient(
+      165deg,
+      rgba(122, 182, 72, 0.11) 0%,
+      rgba(12, 34, 20, 0.34) 52%,
+      rgba(10, 28, 17, 0.26) 100%
+    );
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 6px rgba(0, 0, 0, 0.14);
   }
 
-  .player-preview-root .panel-rows-body,
-  .player-preview-root .community-items-body {
-    flex: 1 1 0;
-    min-height: 0;
+  .player-preview-root .panel-section-weather .panel-section-inner {
+    background: linear-gradient(
+      165deg,
+      rgba(142, 200, 248, 0.08) 0%,
+      rgba(122, 182, 72, 0.1) 14%,
+      rgba(12, 34, 20, 0.34) 54%,
+      rgba(10, 28, 17, 0.26) 100%
+    );
+    border-color: rgba(122, 182, 72, 0.22);
+    box-shadow:
+      inset 3px 0 0 rgba(142, 200, 248, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 6px rgba(0, 0, 0, 0.14);
+  }
+
+  .player-preview-root .panel-section-proshop .panel-section-inner {
+    background: linear-gradient(
+      165deg,
+      rgba(230, 210, 160, 0.07) 0%,
+      rgba(122, 182, 72, 0.11) 14%,
+      rgba(12, 34, 20, 0.34) 54%,
+      rgba(10, 28, 17, 0.26) 100%
+    );
+    border-color: rgba(122, 182, 72, 0.22);
+    box-shadow:
+      inset 3px 0 0 rgba(230, 210, 160, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 6px rgba(0, 0, 0, 0.14);
+  }
+
+  .player-preview-root .panel-section-community .panel-section-inner {
+    background: linear-gradient(
+      165deg,
+      rgba(237, 220, 196, 0.06) 0%,
+      rgba(122, 182, 72, 0.1) 14%,
+      rgba(12, 34, 20, 0.34) 54%,
+      rgba(10, 28, 17, 0.26) 100%
+    );
+    border-color: rgba(122, 182, 72, 0.22);
+    box-shadow:
+      inset 3px 0 0 rgba(237, 220, 196, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      0 1px 6px rgba(0, 0, 0, 0.14);
+  }
+
+  .player-preview-root .panel-subsection-events {
     display: flex;
     flex-direction: column;
-    justify-content: space-evenly;
-    overflow: hidden;
+    gap: 6px;
+    margin-top: 4px;
+    padding: 8px;
+    border-radius: 6px;
+    background: linear-gradient(165deg, rgba(122, 182, 72, 0.11) 0%, rgba(10, 30, 18, 0.28) 100%);
+    border: 0.5px solid rgba(122, 182, 72, 0.18);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: inset 2px 0 0 rgba(237, 220, 196, 0.28);
+  }
+
+  .player-preview-root .panel-block {
+    flex: 0 0 auto;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.10);
+  }
+
+  .player-preview-root .panel-section-inner > .panel-block:last-child,
+  .player-preview-root .panel-section-inner > :last-child.panel-block {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  .player-preview-root .community-events-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .player-preview-root .community-event-row {
+    padding-bottom: 6px;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .player-preview-root .community-event-row:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .player-preview-root .display-title {
+    margin: 0;
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 1.3px;
+    text-transform: uppercase;
+    line-height: 1.15;
   }
 
   .player-preview-root .panel-section-header {
     margin: 0;
-    font-size: 14px;
-    color: var(--os-green-label);
-    letter-spacing: 1.8px;
-    text-transform: uppercase;
-    font-weight: 500;
-    line-height: 1.1;
+    flex-shrink: 0;
+  }
+
+  .player-preview-root .display-title-weather {
+    color: #d4e8f4;
+  }
+
+  .player-preview-root .display-title-community {
+    color: #eddcc4;
+  }
+
+  .player-preview-root .display-title-proshop {
+    color: #f2ead4;
+  }
+
+  .player-preview-root .weather-rows {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .player-preview-root .weather-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .player-preview-root .weather-row:last-child {
+    border-bottom: none;
+  }
+
+  .player-preview-root .weather-row-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.82);
+  }
+
+  .player-preview-root .weather-row-value,
+  .player-preview-root .weather-row dd {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  .player-preview-root .weather-row dt {
+    margin: 0;
   }
 
   .player-preview-root .panel-row {
@@ -861,21 +1007,35 @@ const PLAYER_PREVIEW_CSS = `
   .player-preview-root .weather-feels { margin: 3px 0 0; font-size: 12px; color: rgba(255,255,255,0.82); }
 
   .player-preview-root .panel-forecast-wrap {
-    padding-top: 6px;
+    padding: 4px 0 3px;
     border-top: 0.5px solid rgba(255, 255, 255, 0.07);
+    overflow: visible;
   }
 
-  .player-preview-root .panel-forecast { display: flex; }
+  .player-preview-root .panel-forecast {
+    display: flex;
+    align-items: flex-end;
+    overflow: visible;
+  }
+
   .player-preview-root .panel-forecast-col {
-    flex: 1;
+    flex: 1 1 0;
     text-align: center;
-    padding: 4px 0;
+    padding: 0 2px 4px;
+    min-width: 0;
+    overflow: visible;
   }
 
   .player-preview-root .panel-forecast-col-divider { border-right: 0.5px solid rgba(255, 255, 255, 0.10); }
-  .player-preview-root .panel-forecast-time { margin: 0; font-size: 10px; color: var(--os-green-label); }
-  .player-preview-root .panel-forecast-temp { margin: 3px 0 0; font-size: 15px; font-weight: 300; }
-  .player-preview-root .panel-forecast-rain { margin: 2px 0 0; font-size: 10px; color: rgba(255,255,255,0.82); }
+  .player-preview-root .panel-forecast-time { margin: 0; font-size: 10px; color: var(--os-green-label); line-height: 1.25; }
+  .player-preview-root .panel-forecast-temp { margin: 2px 0 0; font-size: 14px; font-weight: 300; line-height: 1.2; }
+  .player-preview-root .panel-forecast-rain {
+    margin: 3px 0 0;
+    font-size: 10px;
+    color: rgba(255,255,255,0.82);
+    line-height: 1.35;
+    white-space: nowrap;
+  }
 
   .player-preview-root .sun-row {
     display: flex;

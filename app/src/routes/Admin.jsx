@@ -78,8 +78,6 @@ const DEMO_WEATHER_PREVIEW = {
   wind: 'NE 10 mph',
   humidity: '55%',
   uv: '6 · High',
-  rain: '20%',
-  sunrise: '6:12 AM',
   sunset: '8:24 PM',
   forecast: [
     { time: '2 PM', temp: 70, precip: 10 },
@@ -176,8 +174,6 @@ function buildWeatherPreviewDisplay(weather, loading) {
       wind: '—',
       humidity: '—',
       uv: '—',
-      rain: '—',
-      sunrise: '—',
       sunset: '—',
       forecast: DEMO_WEATHER_PREVIEW.forecast.map((slot) => ({
         ...slot,
@@ -198,8 +194,6 @@ function buildWeatherPreviewDisplay(weather, loading) {
   const windMph = weather.wind_speed_mph != null ? Math.round(Number(weather.wind_speed_mph)) : null
   const humidity = weather.humidity != null ? Math.round(Number(weather.humidity)) : null
   const uv = weather.uv_index != null ? Number(weather.uv_index) : null
-  const rain =
-    weather.precip_probability != null ? Math.round(Number(weather.precip_probability)) : null
 
   const windLabel =
     windMph != null
@@ -214,8 +208,6 @@ function buildWeatherPreviewDisplay(weather, loading) {
     wind: windLabel,
     humidity: humidity != null ? `${humidity}%` : '—',
     uv: uv != null ? `${uv} · ${getPreviewUvLevel(uv)}` : '—',
-    rain: rain != null ? `${rain}%` : '—',
-    sunrise: formatPreviewSunTime(weather.sunrise_at),
     sunset: formatPreviewSunTime(weather.sunset_at),
     forecast: buildPreviewForecast(weather.hourly_forecast) ?? DEMO_WEATHER_PREVIEW.forecast,
   }
@@ -320,6 +312,12 @@ function defaultCommunity() {
         id: uid(),
         name: "Men's Invitational",
         detail: 'May 24–26 · Registration open',
+        enabled: true,
+      },
+      {
+        id: uid(),
+        name: 'Wine Tasting May 31',
+        detail: '',
         enabled: true,
       },
     ],

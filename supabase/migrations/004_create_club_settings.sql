@@ -89,7 +89,8 @@ SELECT
       {"id":"a2","type":"Low Round","name":"J. Williams","detail":"68 · May 20 · -4 under par","date":"2026-05-20","enabled":true}
     ],
     "events":[
-      {"id":"e1","name":"Men''s Invitational","detail":"May 24–26 · Registration open","enabled":true}
+      {"id":"e1","name":"Men''s Invitational","detail":"May 24–26 · Registration open","enabled":true},
+      {"id":"e2","name":"Wine Tasting May 31","detail":"","enabled":true}
     ]
   }'::jsonb,
   '{

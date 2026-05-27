@@ -1,108 +1,96 @@
 # Olde Sycamore Golf Club — Conditions Display
 
-Live weather conditions display for Olde Sycamore Golf Club, Charlotte NC.
-Built with React, Supabase, and deployed via Vercel for ScreenCloud digital signage.
+Live course conditions and weather signage for **Olde Sycamore Golf Club**. React front end, Supabase backend, deployed to Vercel (or similar) for TVs and ScreenCloud.
+
+**New owner?** Start here: **[docs/CLIENT_HANDOFF.md](docs/CLIENT_HANDOFF.md)**
+
+## Routes
+
+| URL | Purpose |
+|-----|---------|
+| `/` | **Player** — full-screen signage (default) |
+| `/admin` | **Admin** — edit content, publish to screens |
+| `/editor` | **Editor** — ScreenCloud app configuration |
 
 ## Stack
-- React (CRA) — player + editor routes
-- Supabase — edge function + cron job + weather cache
-- Open-Meteo — free weather API (no key needed)
-- Vercel — hosting
-- ScreenCloud — digital signage platform
 
-## Prerequisites
-- Node.js 18+ and npm
-- A [Supabase](https://supabase.com) project
-- A [Vercel](https://vercel.com) account
-- A [ScreenCloud](https://screencloud.com) account (for digital signage)
+- **React** (Create React App) — Player, Admin, Editor
+- **Supabase** — Postgres, Realtime, Edge Function `fetch-weather`
+- **WeatherAPI.com** — forecast data (key stored in Supabase secrets)
+- **Vercel** — recommended static hosting (`app/vercel.json` for SPA routing)
 
-## Environment Variables
-
-Create a `.env` file in the `app/` directory:
+## Quick start (local)
 
 ```bash
-REACT_APP_SUPABASE_URL=https://<project>.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=<your-anon-key>
-
-# ScreenCloud app credentials (used in the editor route)
-REACT_APP_SCREENCLOUD_APP_ID=<screencloud-app-id>
-REACT_APP_SCREENCLOUD_APP_TOKEN=<screencloud-app-token>
+cd app
+cp .env.example .env.local   # fill in Supabase URL, anon key, admin password
+npm install
+npm start
 ```
 
-Create a `.env` file in the project root for Supabase CLI operations:
+Open [http://localhost:3000](http://localhost:3000) (player), [http://localhost:3000/admin](http://localhost:3000/admin) (manager).
 
-```bash
-SUPABASE_ACCESS_TOKEN=<your-supabase-cli-access-token>
-```
+## Environment variables (`app/.env.local`)
 
-## Local Development Setup
+| Variable | Required |
+|----------|----------|
+| `REACT_APP_SUPABASE_URL` | Yes |
+| `REACT_APP_SUPABASE_ANON_KEY` | Yes |
+| `REACT_APP_ADMIN_PASSWORD` | Yes (for `/admin`) |
+| `REACT_APP_SCREENCLOUD_APP_ID` | ScreenCloud only |
+| `REACT_APP_SCREENCLOUD_APP_TOKEN` | ScreenCloud only |
 
-1. Install dependencies:
+## Supabase setup
 
-   ```bash
-   cd app
-   npm install
-   ```
-
-2. Start the development server:
-
-   ```bash
-   npm start
-   ```
-
-   The app will open at [http://localhost:3000](http://localhost:3000).
-
-## Supabase Setup
-
-This project uses Supabase Edge Functions and a Postgres database to cache weather data fetched from the Open-Meteo API.
-
-1. Link your local project to Supabase:
+1. Create a project at [supabase.com](https://supabase.com).
+2. Link and push migrations:
 
    ```bash
    npx supabase link --project-ref <project-ref>
-   ```
-
-2. Apply database migrations (once they are created in `supabase/migrations/`):
-
-   ```bash
    npx supabase db push
    ```
 
-3. Deploy Edge Functions (once they are created in `supabase/functions/`):
+   Migrations: `001` … `009` in `supabase/migrations/` (apply in filename order).
+
+3. Deploy weather function and set secret:
 
    ```bash
-   npx supabase functions deploy
+   npx supabase secrets set WEATHERAPI_KEY=<your-weatherapi-key>
+   npx supabase functions deploy fetch-weather
    ```
 
-4. Set up a Supabase Cron job to periodically refresh the weather cache (recommended every 10–15 minutes). This can be configured in the Supabase Dashboard under **Database → Cron**.
+4. Schedule `fetch-weather` every **10 minutes** (see `supabase/setup/weather_cron.sql` or Dashboard → Edge Functions → Schedules).
 
-## Deployment
+## Deploy to Vercel
 
-### Vercel
+1. Import repo; set **Root Directory** to `app`.
+2. Add all `REACT_APP_*` env vars from `.env.example`.
+3. Deploy. Confirm `/admin` loads after refresh (rewrites in `vercel.json`).
 
-1. Import your GitHub repository into Vercel.
-2. Set the **Root Directory** to `app`.
-3. Add the environment variables listed above in the Vercel project settings.
-4. Deploy — Vercel will run `npm run build` automatically.
+## Scripts
 
-### ScreenCloud
+```bash
+cd app
+npm start          # dev server
+npm run build      # production build
+npm test           # unit tests (Supabase mocked)
+```
 
-1. In ScreenCloud, create a new Web Content app.
-2. Point the URL to your deployed Vercel domain.
-3. Use the editor route to configure display settings, then assign the player route to your signage screens.
-
-## Project Structure
+## Project structure
 
 ```
-.
-├── app/                    # React application (Create React App)
-│   ├── public/             # Static assets
-│   ├── src/                # React components and routes
-│   ├── package.json        # Dependencies and scripts
-│   └── .gitignore
-├── supabase/
-│   ├── functions/          # Supabase Edge Functions (weather fetcher)
-│   └── migrations/         # Postgres schema migrations
-├── .gitignore              # Root-level ignores
-└── README.md               # This file
+app/                    React app (deploy this folder)
+  src/routes/Player.jsx Signage display
+  src/routes/Admin.jsx  Signage manager
+  vercel.json           SPA routing for /admin, /editor
+docs/
+  CLIENT_HANDOFF.md     Operations guide for the club
+supabase/
+  migrations/           Database schema
+  functions/fetch-weather/
+  setup/weather_cron.sql
 ```
+
+## License / ownership
+
+Transferred to the club operator — configure Supabase and Vercel under the club’s accounts for long-term control.

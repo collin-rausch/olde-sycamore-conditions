@@ -1,8 +1,21 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+import { render, screen } from '@testing-library/react'
+import App from './App'
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
-});
+beforeEach(() => {
+  window.history.pushState({}, '', '/')
+  sessionStorage.clear()
+})
+
+test('renders the signage player on the default route', async () => {
+  render(<App />)
+  expect(
+    await screen.findByRole('main', { name: /olde sycamore golf club conditions display/i }),
+  ).toBeInTheDocument()
+})
+
+test('renders admin sign-in when visiting /admin', () => {
+  window.history.pushState({}, '', '/admin')
+  render(<App />)
+  expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument()
+  expect(screen.getByPlaceholderText(/enter password/i)).toBeInTheDocument()
+})
